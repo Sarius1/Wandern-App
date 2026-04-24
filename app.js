@@ -125,7 +125,10 @@ function nextDayDate(trip) {
   if (daysWithDates.length > 0) {
     const last = new Date(daysWithDates[daysWithDates.length - 1].date + 'T00:00:00');
     last.setDate(last.getDate() + 1);
-    return last.toISOString().slice(0, 10);
+    const y = last.getFullYear();
+    const m = String(last.getMonth() + 1).padStart(2, '0');
+    const d = String(last.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
   return trip.dateStart || '';
 }
