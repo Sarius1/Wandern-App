@@ -1,3 +1,21 @@
+/* ── Dark mode ─────────────────────────────── */
+html.dark {
+  --green-dark:  #74c69d;
+  --green:       #3d8b6a;
+  --green-mid:   #5aaa88;
+  --green-light: #2d5242;
+  --green-pale:  #1a3328;
+  --bg:          #0d1a13;
+  --surface:     #162b20;
+  --text:        #e8f0eb;
+  --text-soft:   #8aac97;
+  --text-muted:  #4d7060;
+  --border:      #243d2e;
+  --shadow-sm:   0 1px 3px rgba(0,0,0,.25);
+  --shadow:      0 2px 8px rgba(0,0,0,.3);
+  --shadow-lg:   0 8px 24px rgba(0,0,0,.4);
+}
+
 /* ── Variables ─────────────────────────────── */
 :root {
   --green-dark:  #1b4332;
@@ -68,16 +86,22 @@ img { display: block; max-width: 100%; }
   z-index: 100;
   box-shadow: var(--shadow);
 }
+.header-text { flex: 1; min-width: 0; }
 .header-title {
-  flex: 1;
   font-size: 1.1rem;
   font-weight: 600;
   letter-spacing: -.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .header-subtitle {
   font-size: .8rem;
   opacity: .75;
   margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .btn-icon {
   width: 38px;
@@ -96,18 +120,49 @@ img { display: block; max-width: 100%; }
 /* ── Dashboard ─────────────────────────────── */
 .dashboard-header {
   background: var(--green);
-  padding: calc(var(--safe-top) + 20px) 20px 24px;
+  padding: calc(var(--safe-top) + 16px) 20px 20px;
   color: #fff;
+}
+.dashboard-header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
 }
 .dashboard-logo {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 2px;
 }
 .dashboard-logo svg { width: 28px; height: 28px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .dashboard-logo-text { font-size: 1.4rem; font-weight: 700; letter-spacing: -.02em; }
 .dashboard-tagline { font-size: .85rem; opacity: .7; margin-left: 38px; }
+.dashboard-settings-btn {
+  color: rgba(255,255,255,.8);
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background .15s;
+}
+.dashboard-settings-btn:active { background: rgba(255,255,255,.2); }
+.dashboard-settings-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Trip description bar */
+.trip-desc-bar {
+  background: var(--green-dark);
+  color: rgba(255,255,255,.85);
+  font-size: .82rem;
+  line-height: 1.5;
+  padding: 8px 60px 8px 16px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+html.dark .trip-desc-bar { color: rgba(255,255,255,.7); }
 
 .trip-list {
   padding: 20px 16px;
@@ -714,6 +769,53 @@ img { display: block; max-width: 100%; }
 .option-icon.yellow svg { stroke: #854d0e; }
 .option-label { font-weight: 600; font-size: .93rem; }
 .option-desc { font-size: .78rem; color: var(--text-muted); margin-top: 1px; }
+
+/* ── Settings modal ─────────────────────────── */
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-label { font-size: .95rem; font-weight: 500; color: var(--text); }
+.settings-toggle-group { display: flex; gap: 6px; }
+.toggle-opt {
+  padding: 6px 16px;
+  border-radius: var(--r-sm);
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.toggle-opt.active { background: var(--green); color: #fff; border-color: var(--green); }
+
+/* iOS-style switch */
+.settings-switch {
+  width: 48px;
+  height: 28px;
+  border-radius: 14px;
+  background: var(--border);
+  position: relative;
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.settings-switch-knob {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  top: 3px;
+  left: 3px;
+  transition: transform .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  display: block;
+}
+.settings-switch.on { background: var(--green); }
+.settings-switch.on .settings-switch-knob { transform: translateX(20px); }
 
 /* ── Offline areas list ─────────────────────── */
 .offline-section-label {

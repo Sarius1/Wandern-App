@@ -5,36 +5,131 @@
 
 // ── Storage ────────────────────────────────────────────────
 const DB_KEY = 'wandern_v1';
+const SETTINGS_KEY = 'wandern_settings';
 
 function loadState() {
   try { return JSON.parse(localStorage.getItem(DB_KEY)) || { trips: [] }; }
   catch { return { trips: [] }; }
 }
-function saveState() {
-  localStorage.setItem(DB_KEY, JSON.stringify(state));
-}
+function saveState() { localStorage.setItem(DB_KEY, JSON.stringify(state)); }
 
 let state = loadState();
 
-// ── Helpers ────────────────────────────────────────────────
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+// ── Settings & i18n ────────────────────────────────────────
+let settings = (() => {
+  try { return { lang: 'de', darkMode: false, ...JSON.parse(localStorage.getItem(SETTINGS_KEY)) }; }
+  catch { return { lang: 'de', darkMode: false }; }
+})();
+
+function saveSettings() { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
+
+function applySettings() {
+  document.documentElement.classList.toggle('dark', settings.darkMode);
 }
+
+const TR = {
+  en: {
+    tagline: 'Your hiking trips',
+    noTrips: 'No trips yet.\nTap + to plan your first hike.',
+    days: 'Days', tickets: 'Tickets', map: 'Map',
+    addDay: '+ Add Day', addEntry: '+ Add Entry',
+    note: 'Note', checklist: 'Checklist',
+    noteDesc: 'Free text, plans, ideas, reminders',
+    checklistDesc: 'Packing list, tasks, to-dos',
+    save: 'Save', cancel: 'Cancel', close: 'Close',
+    newTrip: 'New Trip', createTrip: 'Create Trip',
+    tripName: 'Trip name *', destination: 'Destination',
+    startDate: 'Start date', endDate: 'End date',
+    description: 'Description',
+    descPlaceholder: '1–2 sentences about this trip…',
+    coverPhoto: 'Cover photo', tapPhoto: 'Tap to choose a photo',
+    uploadTicket: 'Upload Ticket / Screenshot',
+    addDayTitle: 'Add Day', label: 'Label', date: 'Date (optional)',
+    settings: 'Settings', language: 'Language', darkMode: 'Dark Mode',
+    gpx: 'GPX', location: 'Location', saveOffline: 'Save offline',
+    offlineMaps: 'Offline Maps', savedAreas: 'Saved areas',
+    downloadArea: 'Download visible area',
+    noAreas: 'No areas saved yet.',
+    areaName: 'Name', areaNamePlaceholder: 'e.g. Jotunheimen North',
+    download: 'Download', zoomRange: 'Zoom range',
+    zoomHint: '(higher = more detail, more data)',
+    showOnMap: 'Show on map',
+    deleteTrip: 'Delete Trip', deleteDay: 'Delete Day',
+    writeSomething: 'Write something…', listTitle: 'List title…', addItem: 'Add item',
+    noDays: 'No days yet.\nTap below to add your first day.',
+    clear: 'Clear',
+    noEntries: 'No entries yet.\nTap + to add your first entry.',
+    editTrip: 'Edit Trip', editDay: 'Edit Day',
+  },
+  de: {
+    tagline: 'Meine Wandertouren',
+    noTrips: 'Noch keine Touren.\nTippe +, um deine erste Tour zu planen.',
+    days: 'Tage', tickets: 'Tickets', map: 'Karte',
+    addDay: '+ Tag hinzufügen', addEntry: '+ Eintrag hinzufügen',
+    note: 'Notiz', checklist: 'Checkliste',
+    noteDesc: 'Freitext, Pläne, Ideen, Erinnerungen',
+    checklistDesc: 'Packliste, Aufgaben, To-Dos',
+    save: 'Speichern', cancel: 'Abbrechen', close: 'Schließen',
+    newTrip: 'Neue Tour', createTrip: 'Tour erstellen',
+    tripName: 'Name der Tour *', destination: 'Ziel',
+    startDate: 'Startdatum', endDate: 'Enddatum',
+    description: 'Beschreibung',
+    descPlaceholder: '1–2 Sätze zur Tour…',
+    coverPhoto: 'Titelbild', tapPhoto: 'Tippe, um ein Foto auszuwählen',
+    uploadTicket: 'Ticket / Screenshot hochladen',
+    addDayTitle: 'Tag hinzufügen', label: 'Bezeichnung', date: 'Datum (optional)',
+    settings: 'Einstellungen', language: 'Sprache', darkMode: 'Dunkelmodus',
+    gpx: 'GPX', location: 'Standort', saveOffline: 'Offline speichern',
+    offlineMaps: 'Offline-Karten', savedAreas: 'Gespeicherte Bereiche',
+    downloadArea: 'Sichtbaren Bereich laden',
+    noAreas: 'Noch keine Bereiche gespeichert.',
+    areaName: 'Name', areaNamePlaceholder: 'z.B. Jotunheimen Nord',
+    download: 'Herunterladen', zoomRange: 'Zoomstufen',
+    zoomHint: '(höher = mehr Detail, mehr Daten)',
+    showOnMap: 'Auf Karte zeigen',
+    deleteTrip: 'Tour löschen', deleteDay: 'Tag löschen',
+    writeSomething: 'Schreibe etwas…', listTitle: 'Listentitel…', addItem: 'Element hinzufügen',
+    noDays: 'Noch keine Tage.\nTippe unten, um den ersten Tag hinzuzufügen.',
+    clear: 'Löschen',
+    noEntries: 'Noch keine Einträge.\nTippe +, um den ersten Eintrag hinzuzufügen.',
+    editTrip: 'Tour bearbeiten', editDay: 'Tag bearbeiten',
+  },
+};
+
+function t(key) { return TR[settings.lang]?.[key] ?? TR.en[key] ?? key; }
+
+// ── Helpers ────────────────────────────────────────────────
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
 function esc(str) {
   return String(str ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+
 function formatDate(iso) {
   if (!iso) return '';
   const d = new Date(iso + 'T00:00:00');
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const locale = settings.lang === 'de' ? 'de-DE' : 'en-GB';
+  return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
 }
+
 function formatDateRange(start, end) {
   if (!start && !end) return '';
   if (start && !end) return formatDate(start);
   return `${formatDate(start)} – ${formatDate(end)}`;
 }
+
+function nextDayDate(trip) {
+  const daysWithDates = (trip.days || []).filter(d => d.date).sort((a, b) => a.date.localeCompare(b.date));
+  if (daysWithDates.length > 0) {
+    const last = new Date(daysWithDates[daysWithDates.length - 1].date + 'T00:00:00');
+    last.setDate(last.getDate() + 1);
+    return last.toISOString().slice(0, 10);
+  }
+  return trip.dateStart || '';
+}
+
 function getTrip(id) { return state.trips.find(t => t.id === id); }
 function getDay(trip, id) { return trip?.days?.find(d => d.id === id); }
 
@@ -42,11 +137,7 @@ function getDay(trip, id) { return trip?.days?.find(d => d.id === id); }
 function navigate(path) { window.location.hash = path; }
 
 function handleRoute() {
-  // Stop location watch when navigating away from map
-  if (_watchId !== null) {
-    navigator.geolocation.clearWatch(_watchId);
-    _watchId = null;
-  }
+  if (_watchId !== null) { navigator.geolocation.clearWatch(_watchId); _watchId = null; }
 
   const hash = decodeURIComponent(window.location.hash.slice(1)) || '/';
   const parts = hash.split('/').filter(Boolean);
@@ -57,11 +148,8 @@ function handleRoute() {
     renderDashboard(app);
   } else if (parts[0] === 'trip' && parts[1]) {
     const tab = parts[2] || 'days';
-    if (tab === 'day' && parts[3]) {
-      renderDayView(app, parts[1], parts[3]);
-    } else {
-      renderTripView(app, parts[1], tab);
-    }
+    if (tab === 'day' && parts[3]) renderDayView(app, parts[1], parts[3]);
+    else renderTripView(app, parts[1], tab);
   } else {
     renderDashboard(app);
   }
@@ -84,12 +172,12 @@ const icons = {
   note:     `<svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>`,
   check:    `<svg viewBox="0 0 24 24"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>`,
   trash:    `<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
-  edit:     `<svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>`,
   locate:   `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.94 11A8 8 0 0 0 13 4.06V2h-2v2.06A8 8 0 0 0 4.06 11H2v2h2.06A8 8 0 0 0 11 19.94V22h2v-2.06A8 8 0 0 0 19.94 13H22v-2h-2.06z"/></svg>`,
   gpx:      `<svg viewBox="0 0 24 24"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>`,
-  days:     `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="14" x2="8" y2="14"/><line x1="12" y1="14" x2="12" y2="14"/><line x1="16" y1="14" x2="16" y2="14"/></svg>`,
+  days:     `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   ticket:   `<svg viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"/></svg>`,
   more:     `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`,
+  gear:     `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`,
 };
 
 // ── Modal system ───────────────────────────────────────────
@@ -101,8 +189,7 @@ function openModal(contentHTML, onClose) {
   modal.classList.remove('hidden');
   document.getElementById('modal-backdrop').onclick = closeModal;
   _modalCloseCallback = onClose || null;
-  // focus first input
-  const first = modal.querySelector('input, textarea');
+  const first = modal.querySelector('input:not([type="file"]), textarea');
   if (first) setTimeout(() => first.focus(), 100);
 }
 
@@ -115,62 +202,106 @@ function closeModal() {
 // ── Toast ──────────────────────────────────────────────────
 let _toastTimer = null;
 function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.remove('hidden');
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.remove('hidden');
   clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => t.classList.add('hidden'), 2200);
+  _toastTimer = setTimeout(() => el.classList.add('hidden'), 2200);
+}
+
+// ── Settings modal ─────────────────────────────────────────
+function openSettingsModal() {
+  const dm = settings.darkMode;
+  const lang = settings.lang;
+  openModal(`
+    <div class="modal-title">${t('settings')}</div>
+    <div class="settings-row">
+      <div class="settings-label">${t('language')}</div>
+      <div class="settings-toggle-group">
+        <button class="toggle-opt ${lang==='de'?'active':''}" data-lang="de">DE</button>
+        <button class="toggle-opt ${lang==='en'?'active':''}" data-lang="en">EN</button>
+      </div>
+    </div>
+    <div class="settings-row">
+      <div class="settings-label">${t('darkMode')}</div>
+      <button class="settings-switch ${dm?'on':''}" id="toggle-dark" aria-label="Toggle dark mode">
+        <span class="settings-switch-knob"></span>
+      </button>
+    </div>
+    <div class="modal-actions" style="padding-top:16px;">
+      <button class="btn-primary" onclick="closeModal()">${t('close')}</button>
+    </div>
+  `);
+
+  document.querySelectorAll('[data-lang]').forEach(btn => {
+    btn.onclick = () => {
+      settings.lang = btn.dataset.lang;
+      saveSettings();
+      closeModal();
+      handleRoute();
+    };
+  });
+
+  document.getElementById('toggle-dark').onclick = function() {
+    settings.darkMode = !settings.darkMode;
+    saveSettings();
+    applySettings();
+    this.classList.toggle('on', settings.darkMode);
+  };
 }
 
 // ── Dashboard ──────────────────────────────────────────────
 function renderDashboard(root) {
   const el = document.createElement('div');
   el.className = 'view';
-
   el.innerHTML = `
     <div class="dashboard-header">
-      <div class="dashboard-logo">
-        ${icons.mountain}
-        <span class="dashboard-logo-text">Wandern</span>
+      <div class="dashboard-header-top">
+        <div class="dashboard-logo">
+          ${icons.mountain}
+          <span class="dashboard-logo-text">Wandern</span>
+        </div>
+        <button class="dashboard-settings-btn" id="btn-settings" aria-label="${t('settings')}">${icons.gear}</button>
       </div>
-      <div class="dashboard-tagline">Your hiking trips</div>
+      <div class="dashboard-tagline">${t('tagline')}</div>
     </div>
     <div class="scroll-area">
       ${state.trips.length === 0 ? renderEmptyDashboard() : renderTripCards()}
       <div class="section-spacer"></div>
     </div>
-    <button class="fab" id="fab-add-trip" aria-label="Add trip">${icons.plus}</button>
+    <button class="fab" id="fab-add-trip" aria-label="${t('newTrip')}">${icons.plus}</button>
   `;
   root.appendChild(el);
 
-  el.querySelector('#fab-add-trip').onclick = () => openAddTripModal();
-
+  el.querySelector('#btn-settings').onclick = openSettingsModal;
+  el.querySelector('#fab-add-trip').onclick = openAddTripModal;
   el.querySelectorAll('.trip-card').forEach(card => {
     card.onclick = () => navigate(`/trip/${card.dataset.id}`);
   });
 }
 
 function renderEmptyDashboard() {
+  const lines = t('noTrips').split('\n');
   return `
     <div class="empty-state">
       ${icons.mountain}
-      <p>No trips yet.<br>Tap <strong>+</strong> to plan your first hike.</p>
+      <p>${lines[0]}<br>${lines[1] || ''}</p>
     </div>`;
 }
 
 function renderTripCards() {
-  return `<div class="trip-list">${state.trips.map(t => {
-    const dayCount = t.days?.length || 0;
-    const dateStr = formatDateRange(t.dateStart, t.dateEnd);
+  return `<div class="trip-list">${state.trips.map(trip => {
+    const dayCount = trip.days?.length || 0;
+    const dateStr = formatDateRange(trip.dateStart, trip.dateEnd);
     return `
-      <div class="trip-card" data-id="${esc(t.id)}">
-        ${t.photo
-          ? `<div class="trip-card-photo"><img src="${t.photo}" alt=""></div>`
+      <div class="trip-card" data-id="${esc(trip.id)}">
+        ${trip.photo
+          ? `<div class="trip-card-photo"><img src="${trip.photo}" alt=""></div>`
           : `<div class="trip-card-accent"></div>`}
         <div class="trip-card-body">
-          <div class="trip-card-name">${esc(t.name)}</div>
+          <div class="trip-card-name">${esc(trip.name)}</div>
           <div class="trip-card-meta">
-            ${t.destination ? `<span>${icons.pin}${esc(t.destination)}</span>` : ''}
+            ${trip.destination ? `<span>${icons.pin}${esc(trip.destination)}</span>` : ''}
             ${dateStr ? `<span>${icons.calendar}${esc(dateStr)}</span>` : ''}
           </div>
         </div>
@@ -183,35 +314,40 @@ function renderTripCards() {
 function openAddTripModal() {
   let pendingPhoto = null;
   openModal(`
-    <div class="modal-title">New Trip</div>
+    <div class="modal-title">${t('newTrip')}</div>
     <div class="field">
-      <label>Cover photo</label>
+      <label>${t('coverPhoto')}</label>
       <label class="photo-upload-label" id="m-photo-label" for="m-trip-photo">
-        ${icons.image}<span>Tap to choose a photo</span>
+        ${icons.image}<span>${t('tapPhoto')}</span>
       </label>
       <input type="file" id="m-trip-photo" accept="image/*" style="display:none">
     </div>
     <div class="field">
-      <label>Trip name *</label>
-      <input id="m-trip-name" type="text" placeholder="e.g. Norway 2025" maxlength="60">
+      <label>${t('tripName')}</label>
+      <input id="m-trip-name" type="text" placeholder="z.B. Norwegen 2025" maxlength="60">
     </div>
     <div class="field">
-      <label>Destination</label>
-      <input id="m-trip-dest" type="text" placeholder="e.g. Jotunheimen, Norway" maxlength="60">
+      <label>${t('destination')}</label>
+      <input id="m-trip-dest" type="text" placeholder="z.B. Jotunheimen, Norwegen" maxlength="60">
     </div>
     <div class="field">
-      <label>Start date</label>
+      <label>${t('description')}</label>
+      <textarea id="m-trip-desc" placeholder="${t('descPlaceholder')}" rows="2"></textarea>
+    </div>
+    <div class="field">
+      <label>${t('startDate')}</label>
       <input id="m-trip-start" type="date">
     </div>
     <div class="field">
-      <label>End date</label>
+      <label>${t('endDate')}</label>
       <input id="m-trip-end" type="date">
     </div>
     <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn-primary" id="m-save-trip">Create Trip</button>
+      <button class="btn-secondary" onclick="closeModal()">${t('cancel')}</button>
+      <button class="btn-primary" id="m-save-trip">${t('createTrip')}</button>
     </div>
   `);
+
   document.getElementById('m-trip-photo').onchange = e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -219,30 +355,30 @@ function openAddTripModal() {
     reader.onload = ev => {
       pendingPhoto = ev.target.result;
       const label = document.getElementById('m-photo-label');
-      label.innerHTML = `<img src="${pendingPhoto}" alt="Cover photo">`;
+      label.innerHTML = `<img src="${pendingPhoto}" alt="">`;
       label.classList.add('has-photo');
     };
     reader.readAsDataURL(file);
   };
+
   document.getElementById('m-save-trip').onclick = () => {
     const name = document.getElementById('m-trip-name').value.trim();
     if (!name) { document.getElementById('m-trip-name').focus(); return; }
     const trip = {
-      id: uid(),
-      name,
+      id: uid(), name,
       destination: document.getElementById('m-trip-dest').value.trim(),
+      description: document.getElementById('m-trip-desc').value.trim(),
       dateStart: document.getElementById('m-trip-start').value,
       dateEnd: document.getElementById('m-trip-end').value,
       photo: pendingPhoto,
-      days: [],
-      tickets: [],
-      gpx: null,
+      days: [], tickets: [], gpx: null,
     };
     state.trips.unshift(trip);
     saveState();
     closeModal();
     navigate(`/trip/${trip.id}`);
   };
+
   document.getElementById('m-trip-name').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('m-save-trip').click();
   });
@@ -257,69 +393,73 @@ function renderTripView(root, tripId, tab) {
   el.className = 'view';
   el.innerHTML = `
     <div class="header">
-      <button class="btn-icon" id="btn-back" aria-label="Back">${icons.back}</button>
-      <div>
+      <button class="btn-icon" id="btn-back" aria-label="${t('back')}">${icons.back}</button>
+      <div class="header-text">
         <div class="header-title">${esc(trip.name)}</div>
         ${trip.destination ? `<div class="header-subtitle">${esc(trip.destination)}</div>` : ''}
       </div>
-      <button class="btn-icon" id="btn-trip-menu" aria-label="More">${icons.more}</button>
+      <button class="btn-icon" id="btn-trip-menu" aria-label="${t('more')}">${icons.more}</button>
     </div>
-    <div class="tabs" id="tabs">
-      <button class="tab-btn ${tab==='days'?'active':''}" data-tab="days">${icons.days}<span>Days</span></button>
-      <button class="tab-btn ${tab==='tickets'?'active':''}" data-tab="tickets">${icons.ticket}<span>Tickets</span></button>
-      <button class="tab-btn ${tab==='map'?'active':''}" data-tab="map">${icons.map}<span>Map</span></button>
+    ${trip.description ? `<div class="trip-desc-bar">${esc(trip.description)}</div>` : ''}
+    <div class="tabs">
+      <button class="tab-btn ${tab==='days'?'active':''}" data-tab="days">${icons.days}<span>${t('days')}</span></button>
+      <button class="tab-btn ${tab==='tickets'?'active':''}" data-tab="tickets">${icons.ticket}<span>${t('tickets')}</span></button>
+      <button class="tab-btn ${tab==='map'?'active':''}" data-tab="map">${icons.map}<span>${t('map')}</span></button>
     </div>
     <div id="tab-content" class="tab-content scroll-area"></div>
   `;
   root.appendChild(el);
 
   el.querySelector('#btn-back').onclick = () => navigate('/');
-  el.querySelector('#btn-trip-menu').onclick = () => openTripMenu(trip);
+  el.querySelector('#btn-trip-menu').onclick = () => openTripMenu(trip, el);
   el.querySelectorAll('.tab-btn').forEach(btn => {
     btn.onclick = () => navigate(`/trip/${tripId}/${btn.dataset.tab}`);
   });
 
   const content = el.querySelector('#tab-content');
-  if (tab === 'days')    renderDaysTab(content, trip);
+  if (tab === 'days')         renderDaysTab(content, trip);
   else if (tab === 'tickets') renderTicketsTab(content, trip);
-  else if (tab === 'map') renderMapTab(content, trip);
+  else if (tab === 'map')     renderMapTab(content, trip);
 }
 
-function openTripMenu(trip) {
+function openTripMenu(trip, viewEl) {
   let pendingPhoto = trip.photo || null;
   openModal(`
-    <div class="modal-title">${esc(trip.name)}</div>
+    <div class="modal-title">${t('editTrip')}</div>
     <div class="field">
-      <label>Cover photo</label>
+      <label>${t('coverPhoto')}</label>
       <label class="photo-upload-label ${trip.photo ? 'has-photo' : ''}" id="m-photo-label" for="m-edit-trip-photo">
-        ${trip.photo
-          ? `<img src="${trip.photo}" alt="Cover photo">`
-          : `${icons.image}<span>Tap to choose a photo</span>`}
+        ${trip.photo ? `<img src="${trip.photo}" alt="">` : `${icons.image}<span>${t('tapPhoto')}</span>`}
       </label>
       <input type="file" id="m-edit-trip-photo" accept="image/*" style="display:none">
     </div>
-    <div class="field" style="padding-bottom:0">
-      <label>Trip name</label>
+    <div class="field">
+      <label>${t('tripName')}</label>
       <input id="m-edit-name" type="text" value="${esc(trip.name)}" maxlength="60">
     </div>
-    <div class="field" style="padding-bottom:0">
-      <label>Destination</label>
+    <div class="field">
+      <label>${t('destination')}</label>
       <input id="m-edit-dest" type="text" value="${esc(trip.destination||'')}" maxlength="60">
     </div>
-    <div class="field" style="padding-bottom:0">
-      <label>Start date</label>
+    <div class="field">
+      <label>${t('description')}</label>
+      <textarea id="m-edit-desc" rows="2" placeholder="${t('descPlaceholder')}">${esc(trip.description||'')}</textarea>
+    </div>
+    <div class="field">
+      <label>${t('startDate')}</label>
       <input id="m-edit-start" type="date" value="${esc(trip.dateStart||'')}">
     </div>
     <div class="field">
-      <label>End date</label>
+      <label>${t('endDate')}</label>
       <input id="m-edit-end" type="date" value="${esc(trip.dateEnd||'')}">
     </div>
     <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn-primary" id="m-save-edit">Save</button>
+      <button class="btn-secondary" onclick="closeModal()">${t('cancel')}</button>
+      <button class="btn-primary" id="m-save-edit">${t('save')}</button>
     </div>
-    <button class="btn-danger" id="m-delete-trip">Delete Trip</button>
+    <button class="btn-danger" id="m-delete-trip">${t('deleteTrip')}</button>
   `);
+
   document.getElementById('m-edit-trip-photo').onchange = e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -327,16 +467,18 @@ function openTripMenu(trip) {
     reader.onload = ev => {
       pendingPhoto = ev.target.result;
       const label = document.getElementById('m-photo-label');
-      label.innerHTML = `<img src="${pendingPhoto}" alt="Cover photo">`;
+      label.innerHTML = `<img src="${pendingPhoto}" alt="">`;
       label.classList.add('has-photo');
     };
     reader.readAsDataURL(file);
   };
+
   document.getElementById('m-save-edit').onclick = () => {
     const name = document.getElementById('m-edit-name').value.trim();
     if (!name) return;
     trip.name = name;
     trip.destination = document.getElementById('m-edit-dest').value.trim();
+    trip.description = document.getElementById('m-edit-desc').value.trim();
     trip.dateStart = document.getElementById('m-edit-start').value;
     trip.dateEnd = document.getElementById('m-edit-end').value;
     trip.photo = pendingPhoto;
@@ -344,8 +486,9 @@ function openTripMenu(trip) {
     closeModal();
     navigate(`/trip/${trip.id}`);
   };
+
   document.getElementById('m-delete-trip').onclick = () => {
-    if (!confirm(`Delete "${trip.name}"? This cannot be undone.`)) return;
+    if (!confirm(`"${trip.name}" ${t('deleteTrip')}?`)) return;
     state.trips = state.trips.filter(t => t.id !== trip.id);
     saveState();
     closeModal();
@@ -356,65 +499,65 @@ function openTripMenu(trip) {
 // ── Days Tab ───────────────────────────────────────────────
 function renderDaysTab(root, trip) {
   const days = trip.days || [];
+  const lines = t('noDays').split('\n');
   root.innerHTML = `
     <div class="days-list">
-      ${days.length === 0 ? `
-        <div class="empty-state" style="padding:40px 0;">
-          ${icons.calendar}
-          <p>No days yet.<br>Tap below to add your first day.</p>
-        </div>` :
-        days.map((day, i) => {
-          const count = day.entries?.length || 0;
-          return `
-            <div class="day-card" data-day="${esc(day.id)}">
-              <div class="day-card-num">${i+1}</div>
-              <div class="day-card-info">
-                <div class="day-card-label">${esc(day.label)}</div>
-                ${day.date ? `<div class="day-card-date">${formatDate(day.date)}</div>` : ''}
-              </div>
-              ${count > 0 ? `<span class="day-card-count">${count} entr${count===1?'y':'ies'}</span>` : ''}
-              <div class="day-card-arrow">${icons.chevron}</div>
-            </div>`;
-        }).join('')
+      ${days.length === 0
+        ? `<div class="empty-state" style="padding:40px 0;">${icons.calendar}<p>${lines[0]}<br>${lines[1]||''}</p></div>`
+        : days.map((day, i) => {
+            const count = day.entries?.length || 0;
+            return `
+              <div class="day-card" data-day="${esc(day.id)}">
+                <div class="day-card-num">${i+1}</div>
+                <div class="day-card-info">
+                  <div class="day-card-label">${esc(day.label)}</div>
+                  ${day.date ? `<div class="day-card-date">${formatDate(day.date)}</div>` : ''}
+                </div>
+                ${count > 0 ? `<span class="day-card-count">${count} Eintr${count===1?'ag':'äge'}</span>` : ''}
+                <div class="day-card-arrow">${icons.chevron}</div>
+              </div>`;
+          }).join('')
       }
     </div>
-    <button class="add-day-row" id="btn-add-day">${icons.plus} Add Day</button>
+    <button class="add-day-row" id="btn-add-day">${t('addDay')}</button>
     <div class="section-spacer"></div>
   `;
 
   root.querySelectorAll('.day-card').forEach(card => {
     card.onclick = () => navigate(`/trip/${trip.id}/day/${card.dataset.day}`);
   });
-  root.querySelector('#btn-add-day').onclick = () => openAddDayModal(trip);
+  root.querySelector('#btn-add-day').onclick = () => openAddDayModal(trip, root);
 }
 
-function openAddDayModal(trip) {
+function openAddDayModal(trip, tabRoot) {
   const dayNum = (trip.days?.length || 0) + 1;
-  const suggestLabel = `Day ${dayNum}`;
+  const suggestLabel = `${t('label') === 'Bezeichnung' ? 'Tag' : 'Day'} ${dayNum}`;
+  const suggestDate = nextDayDate(trip);
+
   openModal(`
-    <div class="modal-title">Add Day</div>
+    <div class="modal-title">${t('addDayTitle')}</div>
     <div class="field">
-      <label>Label</label>
+      <label>${t('label')}</label>
       <input id="m-day-label" type="text" value="${esc(suggestLabel)}" maxlength="40">
     </div>
     <div class="field">
-      <label>Date (optional)</label>
-      <input id="m-day-date" type="date" value="${esc(trip.dateStart||'')}">
+      <label>${t('date')}</label>
+      <input id="m-day-date" type="date" value="${esc(suggestDate)}">
     </div>
     <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn-primary" id="m-save-day">Add</button>
+      <button class="btn-secondary" onclick="closeModal()">${t('cancel')}</button>
+      <button class="btn-primary" id="m-save-day">${t('addDayTitle')}</button>
     </div>
   `);
+
   const save = () => {
     const label = document.getElementById('m-day-label').value.trim() || suggestLabel;
     if (!trip.days) trip.days = [];
     trip.days.push({ id: uid(), label, date: document.getElementById('m-day-date').value, entries: [] });
     saveState();
     closeModal();
-    // Re-render in place — navigate() won't fire if URL hasn't changed
-    const tabContent = document.getElementById('tab-content');
-    if (tabContent) renderDaysTab(tabContent, trip);
+    const target = tabRoot || document.getElementById('tab-content');
+    if (target) renderDaysTab(target, trip);
   };
   document.getElementById('m-save-day').onclick = save;
   document.getElementById('m-day-label').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
@@ -431,18 +574,18 @@ function renderDayView(root, tripId, dayId) {
   el.className = 'view';
   el.innerHTML = `
     <div class="header">
-      <button class="btn-icon" id="btn-back" aria-label="Back">${icons.back}</button>
-      <div>
+      <button class="btn-icon" id="btn-back">${icons.back}</button>
+      <div class="header-text">
         <div class="header-title">${esc(day.label)}</div>
         ${day.date ? `<div class="header-subtitle">${formatDate(day.date)}</div>` : ''}
       </div>
-      <button class="btn-icon" id="btn-day-menu" aria-label="More">${icons.more}</button>
+      <button class="btn-icon" id="btn-day-menu">${icons.more}</button>
     </div>
     <div class="scroll-area" style="flex:1;">
       <div class="entries-list" id="entries-list">
         ${(day.entries||[]).map(e => renderEntry(e)).join('')}
       </div>
-      <button class="add-entry-row" id="btn-add-entry">${icons.plus} Add Entry</button>
+      <button class="add-entry-row" id="btn-add-entry">${t('addEntry')}</button>
       <div class="section-spacer"></div>
     </div>
   `;
@@ -459,10 +602,10 @@ function renderEntry(entry) {
     return `
       <div class="entry-card" data-entry="${esc(entry.id)}">
         <div class="entry-header">
-          <span class="entry-type-badge">Note</span>
-          <button class="entry-delete" data-del="${esc(entry.id)}" aria-label="Delete">${icons.trash}</button>
+          <span class="entry-type-badge">${t('note')}</span>
+          <button class="entry-delete" data-del="${esc(entry.id)}">${icons.trash}</button>
         </div>
-        <textarea class="entry-textarea" data-save="${esc(entry.id)}" rows="3" placeholder="Write something…">${esc(entry.content)}</textarea>
+        <textarea class="entry-textarea" data-save="${esc(entry.id)}" rows="3" placeholder="${t('writeSomething')}">${esc(entry.content)}</textarea>
       </div>`;
   }
   if (entry.type === 'checklist') {
@@ -470,14 +613,14 @@ function renderEntry(entry) {
     return `
       <div class="entry-card" data-entry="${esc(entry.id)}">
         <div class="entry-header">
-          <span class="entry-type-badge checklist">Checklist</span>
-          <button class="entry-delete" data-del="${esc(entry.id)}" aria-label="Delete">${icons.trash}</button>
+          <span class="entry-type-badge checklist">${t('checklist')}</span>
+          <button class="entry-delete" data-del="${esc(entry.id)}">${icons.trash}</button>
         </div>
-        <input class="checklist-title-input" type="text" data-title="${esc(entry.id)}" value="${esc(entry.title)}" placeholder="List title…">
+        <input class="checklist-title-input" type="text" data-title="${esc(entry.id)}" value="${esc(entry.title)}" placeholder="${t('listTitle')}">
         <div class="checklist-items" id="cl-items-${esc(entry.id)}">
           ${items.map(item => renderChecklistItem(entry.id, item)).join('')}
         </div>
-        <button class="checklist-add-item" data-add-item="${esc(entry.id)}">${icons.plus} Add item</button>
+        <button class="checklist-add-item" data-add-item="${esc(entry.id)}">${icons.plus} ${t('addItem')}</button>
       </div>`;
   }
   return '';
@@ -487,8 +630,8 @@ function renderChecklistItem(entryId, item) {
   return `
     <div class="checklist-item" data-item="${esc(item.id)}">
       <input type="checkbox" ${item.done ? 'checked' : ''} data-check="${esc(entryId)}|${esc(item.id)}">
-      <input type="text" class="checklist-item-text ${item.done?'done':''}" value="${esc(item.text)}" placeholder="Item…" data-item-text="${esc(entryId)}|${esc(item.id)}">
-      <button class="checklist-item-del" data-del-item="${esc(entryId)}|${esc(item.id)}" aria-label="Remove">${icons.trash}</button>
+      <input type="text" class="checklist-item-text ${item.done?'done':''}" value="${esc(item.text)}" placeholder="${t('addItem')}…" data-item-text="${esc(entryId)}|${esc(item.id)}">
+      <button class="checklist-item-del" data-del-item="${esc(entryId)}|${esc(item.id)}">${icons.trash}</button>
     </div>`;
 }
 
@@ -496,44 +639,34 @@ function bindEntryEvents(root, trip, day) {
   const list = root.querySelector('#entries-list');
   if (!list) return;
 
-  // Auto-save note textarea on input
   list.addEventListener('input', e => {
     const ta = e.target.closest('[data-save]');
-    if (ta) {
-      const entry = day.entries.find(en => en.id === ta.dataset.save);
-      if (entry) { entry.content = ta.value; saveState(); }
-    }
+    if (ta) { const en = day.entries.find(x => x.id === ta.dataset.save); if (en) { en.content = ta.value; saveState(); } }
     const ti = e.target.closest('[data-title]');
-    if (ti) {
-      const entry = day.entries.find(en => en.id === ti.dataset.title);
-      if (entry) { entry.title = ti.value; saveState(); }
-    }
+    if (ti) { const en = day.entries.find(x => x.id === ti.dataset.title); if (en) { en.title = ti.value; saveState(); } }
     const it = e.target.closest('[data-item-text]');
     if (it) {
       const [eid, iid] = it.dataset.itemText.split('|');
-      const entry = day.entries.find(en => en.id === eid);
-      const item = entry?.items?.find(i => i.id === iid);
+      const en = day.entries.find(x => x.id === eid);
+      const item = en?.items?.find(i => i.id === iid);
       if (item) { item.text = it.value; saveState(); }
     }
   });
 
-  // Checkbox toggle
   list.addEventListener('change', e => {
     const cb = e.target.closest('[data-check]');
     if (cb) {
       const [eid, iid] = cb.dataset.check.split('|');
-      const entry = day.entries.find(en => en.id === eid);
-      const item = entry?.items?.find(i => i.id === iid);
+      const en = day.entries.find(x => x.id === eid);
+      const item = en?.items?.find(i => i.id === iid);
       if (item) {
         item.done = cb.checked;
         saveState();
-        const textEl = cb.parentElement.querySelector('.checklist-item-text');
-        if (textEl) textEl.classList.toggle('done', item.done);
+        cb.parentElement.querySelector('.checklist-item-text')?.classList.toggle('done', item.done);
       }
     }
   });
 
-  // Delete entry
   list.addEventListener('click', e => {
     const delBtn = e.target.closest('[data-del]');
     if (delBtn) {
@@ -542,33 +675,26 @@ function bindEntryEvents(root, trip, day) {
       delBtn.closest('.entry-card').remove();
       return;
     }
-    // Delete checklist item
     const delItem = e.target.closest('[data-del-item]');
     if (delItem) {
       const [eid, iid] = delItem.dataset.delItem.split('|');
-      const entry = day.entries.find(en => en.id === eid);
-      if (entry) {
-        entry.items = entry.items.filter(i => i.id !== iid);
-        saveState();
-        delItem.closest('.checklist-item').remove();
-      }
+      const en = day.entries.find(x => x.id === eid);
+      if (en) { en.items = en.items.filter(i => i.id !== iid); saveState(); delItem.closest('.checklist-item').remove(); }
       return;
     }
-    // Add checklist item
     const addItem = e.target.closest('[data-add-item]');
     if (addItem) {
       const eid = addItem.dataset.addItem;
-      const entry = day.entries.find(en => en.id === eid);
-      if (entry) {
+      const en = day.entries.find(x => x.id === eid);
+      if (en) {
         const item = { id: uid(), text: '', done: false };
-        if (!entry.items) entry.items = [];
-        entry.items.push(item);
+        if (!en.items) en.items = [];
+        en.items.push(item);
         saveState();
         const container = list.querySelector(`#cl-items-${eid}`);
         if (container) {
           container.insertAdjacentHTML('beforeend', renderChecklistItem(eid, item));
-          const newInput = container.lastElementChild.querySelector('input[type="text"]');
-          if (newInput) newInput.focus();
+          container.lastElementChild?.querySelector('input[type="text"]')?.focus();
         }
       }
     }
@@ -577,24 +703,19 @@ function bindEntryEvents(root, trip, day) {
 
 function openAddEntryModal(trip, day, root) {
   openModal(`
-    <div class="modal-title">Add Entry</div>
+    <div class="modal-title">${t('addEntry')}</div>
     <div class="option-list">
       <button class="option-item" id="opt-note">
         <div class="option-icon">${icons.note}</div>
-        <div>
-          <div class="option-label">Note</div>
-          <div class="option-desc">Free text, plans, ideas, reminders</div>
-        </div>
+        <div><div class="option-label">${t('note')}</div><div class="option-desc">${t('noteDesc')}</div></div>
       </button>
       <button class="option-item" id="opt-checklist">
         <div class="option-icon yellow">${icons.check}</div>
-        <div>
-          <div class="option-label">Checklist</div>
-          <div class="option-desc">Packing list, tasks, items to do</div>
-        </div>
+        <div><div class="option-label">${t('checklist')}</div><div class="option-desc">${t('checklistDesc')}</div></div>
       </button>
     </div>
   `);
+
   document.getElementById('opt-note').onclick = () => {
     const entry = { id: uid(), type: 'note', content: '' };
     if (!day.entries) day.entries = [];
@@ -604,11 +725,10 @@ function openAddEntryModal(trip, day, root) {
     const list = root.querySelector('#entries-list');
     if (list) {
       list.insertAdjacentHTML('beforeend', renderEntry(entry));
-      // event delegation already active on list — no rebind needed
-      const ta = list.lastElementChild?.querySelector('textarea');
-      if (ta) ta.focus();
+      list.lastElementChild?.querySelector('textarea')?.focus();
     }
   };
+
   document.getElementById('opt-checklist').onclick = () => {
     const entry = { id: uid(), type: 'checklist', title: '', items: [] };
     if (!day.entries) day.entries = [];
@@ -618,29 +738,29 @@ function openAddEntryModal(trip, day, root) {
     const list = root.querySelector('#entries-list');
     if (list) {
       list.insertAdjacentHTML('beforeend', renderEntry(entry));
-      const ti = list.lastElementChild?.querySelector('.checklist-title-input');
-      if (ti) ti.focus();
+      list.lastElementChild?.querySelector('.checklist-title-input')?.focus();
     }
   };
 }
 
 function openDayMenu(trip, day) {
   openModal(`
-    <div class="modal-title">Edit Day</div>
+    <div class="modal-title">${t('editDay')}</div>
     <div class="field">
-      <label>Label</label>
+      <label>${t('label')}</label>
       <input id="m-edit-day-label" type="text" value="${esc(day.label)}" maxlength="40">
     </div>
     <div class="field">
-      <label>Date</label>
+      <label>${t('date')}</label>
       <input id="m-edit-day-date" type="date" value="${esc(day.date||'')}">
     </div>
     <div class="modal-actions">
-      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
-      <button class="btn-primary" id="m-save-day-edit">Save</button>
+      <button class="btn-secondary" onclick="closeModal()">${t('cancel')}</button>
+      <button class="btn-primary" id="m-save-day-edit">${t('save')}</button>
     </div>
-    <button class="btn-danger" id="m-del-day">Delete Day</button>
+    <button class="btn-danger" id="m-del-day">${t('deleteDay')}</button>
   `);
+
   document.getElementById('m-save-day-edit').onclick = () => {
     day.label = document.getElementById('m-edit-day-label').value.trim() || day.label;
     day.date = document.getElementById('m-edit-day-date').value;
@@ -648,8 +768,9 @@ function openDayMenu(trip, day) {
     closeModal();
     navigate(`/trip/${trip.id}/day/${day.id}`);
   };
+
   document.getElementById('m-del-day').onclick = () => {
-    if (!confirm(`Delete "${day.label}"?`)) return;
+    if (!confirm(`"${day.label}" ${t('deleteDay')}?`)) return;
     trip.days = trip.days.filter(d => d.id !== day.id);
     saveState();
     closeModal();
@@ -662,11 +783,10 @@ function renderTicketsTab(root, trip) {
   root.innerHTML = `
     <div class="tickets-list">
       <label class="upload-btn" for="ticket-file-input">
-        ${icons.upload}
-        <span>Upload Ticket / Screenshot</span>
+        ${icons.upload}<span>${t('uploadTicket')}</span>
       </label>
       <input type="file" id="ticket-file-input" accept="image/*,application/pdf" multiple>
-      ${(trip.tickets||[]).map(t => renderTicketCard(t)).join('')}
+      ${(trip.tickets||[]).map(tk => renderTicketCard(tk)).join('')}
     </div>
     <div class="section-spacer"></div>
   `;
@@ -676,31 +796,30 @@ function renderTicketsTab(root, trip) {
   root.querySelectorAll('[data-ticket-del]').forEach(btn => {
     btn.onclick = ev => {
       ev.stopPropagation();
-      const id = btn.dataset.ticketDel;
-      trip.tickets = trip.tickets.filter(t => t.id !== id);
+      trip.tickets = trip.tickets.filter(tk => tk.id !== btn.dataset.ticketDel);
       saveState();
       btn.closest('.ticket-card').remove();
     };
   });
 
   root.querySelectorAll('.ticket-card[data-ticket-open]').forEach(card => {
-    card.onclick = () => openTicket(trip.tickets.find(t => t.id === card.dataset.ticketOpen));
+    card.onclick = () => openTicket(trip.tickets.find(tk => tk.id === card.dataset.ticketOpen));
   });
 }
 
-function renderTicketCard(t) {
-  const isImage = t.fileType?.startsWith('image/');
+function renderTicketCard(tk) {
+  const isImage = tk.fileType?.startsWith('image/');
   const icon = isImage
-    ? `<div class="ticket-icon"><img src="${t.data}" alt="${esc(t.name)}"></div>`
+    ? `<div class="ticket-icon"><img src="${tk.data}" alt="${esc(tk.name)}"></div>`
     : `<div class="ticket-icon">${icons.file}</div>`;
   return `
-    <div class="ticket-card" data-ticket-open="${esc(t.id)}">
+    <div class="ticket-card" data-ticket-open="${esc(tk.id)}">
       ${icon}
       <div class="ticket-info">
-        <div class="ticket-name">${esc(t.name)}</div>
-        <div class="ticket-meta">${esc(t.fileType)} · ${esc(t.sizeFmt)}</div>
+        <div class="ticket-name">${esc(tk.name)}</div>
+        <div class="ticket-meta">${esc(tk.fileType)} · ${esc(tk.sizeFmt)}</div>
       </div>
-      <button class="ticket-del" data-ticket-del="${esc(t.id)}" aria-label="Delete">${icons.trash}</button>
+      <button class="ticket-del" data-ticket-del="${esc(tk.id)}">${icons.trash}</button>
     </div>`;
 }
 
@@ -711,30 +830,22 @@ function handleTicketUpload(e, trip, root) {
   files.forEach(file => {
     const reader = new FileReader();
     reader.onload = ev => {
-      const ticket = {
-        id: uid(),
-        name: file.name,
-        fileType: file.type,
-        sizeFmt: formatBytes(file.size),
-        data: ev.target.result,
-      };
+      const ticket = { id: uid(), name: file.name, fileType: file.type, sizeFmt: formatBytes(file.size), data: ev.target.result };
       if (!trip.tickets) trip.tickets = [];
       trip.tickets.push(ticket);
       saveState();
       const list = root.querySelector('.tickets-list');
       list.insertAdjacentHTML('beforeend', renderTicketCard(ticket));
-      // rebind events for new card
       const card = list.lastElementChild;
       card.onclick = () => openTicket(ticket);
-      const delBtn = card.querySelector('[data-ticket-del]');
-      if (delBtn) delBtn.onclick = ev => {
+      card.querySelector('[data-ticket-del]').onclick = ev => {
         ev.stopPropagation();
-        trip.tickets = trip.tickets.filter(t => t.id !== ticket.id);
+        trip.tickets = trip.tickets.filter(tk => tk.id !== ticket.id);
         saveState();
         card.remove();
       };
       loaded++;
-      if (loaded === files.length) showToast(`${loaded} file${loaded>1?'s':''} added`);
+      if (loaded === files.length) showToast(`${loaded} Datei${loaded>1?'en':''} hinzugefügt`);
     };
     reader.readAsDataURL(file);
   });
@@ -761,10 +872,8 @@ function openTicket(ticket) {
   if (ticket.fileType?.startsWith('image/')) {
     openLightbox(ticket.data, ticket.name);
   } else {
-    // Blob URL works in Safari where data: URLs in new tabs are blocked
     const url = URL.createObjectURL(dataURLToBlob(ticket.data));
     const win = window.open(url, '_blank');
-    // If popup was blocked, fall back to same-window navigation
     if (!win) window.location.href = url;
     setTimeout(() => URL.revokeObjectURL(url), 30000);
   }
@@ -780,9 +889,7 @@ function openLightbox(src, title) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
       </button>
     </div>
-    <div class="lightbox-body">
-      <img src="${src}" alt="${esc(title)}">
-    </div>
+    <div class="lightbox-body"><img src="${src}" alt="${esc(title)}"></div>
   `;
   lb.querySelector('.lightbox-close').onclick = () => lb.remove();
   document.body.appendChild(lb);
@@ -796,7 +903,6 @@ let _watchId = null;
 let _areaRect = null;
 
 function renderMapTab(root, trip) {
-  // Keep flex:1 from scroll-area but disable scrolling so map fills height
   root.style.overflowY = 'hidden';
   root.innerHTML = `
     <div class="map-container">
@@ -804,22 +910,16 @@ function renderMapTab(root, trip) {
       ${trip.gpx ? `<div class="gpx-filename">${esc(trip.gpx.filename)}</div>` : ''}
     </div>
     <div class="map-toolbar">
-      <button class="map-btn" id="btn-gpx">
-        ${icons.gpx}<span>GPX</span>
-      </button>
-      <button class="map-btn" id="btn-locate">
-        ${icons.locate}<span>Location</span>
-      </button>
-      <button class="map-btn" id="btn-offline">
-        ${icons.upload}<span>Save offline</span>
-      </button>
-      ${trip.gpx ? `<button class="map-btn" id="btn-clear-gpx">${icons.trash}<span>Clear</span></button>` : ''}
+      <button class="map-btn" id="btn-gpx">${icons.gpx}<span>${t('gpx')}</span></button>
+      <button class="map-btn" id="btn-locate">${icons.locate}<span>${t('location')}</span></button>
+      <button class="map-btn" id="btn-offline">${icons.upload}<span>${t('saveOffline')}</span></button>
+      ${trip.gpx ? `<button class="map-btn" id="btn-clear-gpx">${icons.trash}<span>${t('clear')}</span></button>` : ''}
     </div>
     <input type="file" id="gpx-file-input" accept=".gpx,application/gpx+xml,text/xml">
   `;
+
   root.querySelector('#btn-gpx').onclick = () => root.querySelector('#gpx-file-input').click();
   root.querySelector('#gpx-file-input').onchange = e => handleGpxUpload(e, trip, root);
-
   root.querySelector('#btn-locate').onclick = () => toggleLocation(root);
   root.querySelector('#btn-offline').onclick = () => openOfflineModal(trip);
 
@@ -829,29 +929,21 @@ function renderMapTab(root, trip) {
     saveState();
     if (_routeLayer) { _map.removeLayer(_routeLayer); _routeLayer = null; }
     clearBtn.remove();
-    const label = root.querySelector('.gpx-filename');
-    if (label) label.remove();
-    showToast('Route cleared');
+    root.querySelector('.gpx-filename')?.remove();
+    showToast('Route gelöscht');
   };
 
-  // Init map after DOM is painted
   requestAnimationFrame(() => initMap(trip));
 }
 
 function initMap(trip) {
   if (_map) { _map.remove(); _map = null; _routeLayer = null; _locationMarker = null; _areaRect = null; }
 
-  _map = L.map('map', {
-    zoomControl: true,
-    attributionControl: true,
-  }).setView([47.5, 10.5], 10); // default: Allgäu area
+  _map = L.map('map', { zoomControl: true, attributionControl: true }).setView([47.5, 10.5], 10);
 
-  // OSM tile layer — structured so provider can be swapped for offline support
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
-    // For offline support: replace with a local tile server URL
-    // e.g. 'http://localhost:8080/tiles/{z}/{x}/{y}.png'
   }).addTo(_map);
 
   if (trip.gpx) {
@@ -870,35 +962,28 @@ function handleGpxUpload(e, trip, root) {
   reader.onload = ev => {
     const xml = ev.target.result;
     const points = parseGPX(xml);
-    if (points.length === 0) { showToast('No track points found in GPX'); return; }
+    if (points.length === 0) { showToast('Keine Trackpunkte gefunden'); return; }
     trip.gpx = { filename: file.name, data: xml };
     saveState();
-
-    if (_routeLayer) { _map.removeLayer(_routeLayer); }
+    if (_routeLayer) _map.removeLayer(_routeLayer);
     _routeLayer = L.polyline(points, { color: '#2d6a4f', weight: 4, opacity: .85 }).addTo(_map);
     _map.fitBounds(_routeLayer.getBounds(), { padding: [24, 24] });
-    showToast(`Route loaded: ${points.length} points`);
-
-    // Update filename label
+    showToast(`Route geladen: ${points.length} Punkte`);
     let label = root.querySelector('.gpx-filename');
     if (!label) {
-      root.querySelector('.map-container').insertAdjacentHTML('beforeend',
-        `<div class="gpx-filename">${esc(file.name)}</div>`);
+      root.querySelector('.map-container').insertAdjacentHTML('beforeend', `<div class="gpx-filename">${esc(file.name)}</div>`);
     } else {
       label.textContent = file.name;
     }
-    // Show clear button if not there
     if (!root.querySelector('#btn-clear-gpx')) {
-      const toolbar = root.querySelector('.map-toolbar');
-      toolbar.insertAdjacentHTML('beforeend',
-        `<button class="map-btn" id="btn-clear-gpx">${icons.trash}<span>Clear</span></button>`);
+      root.querySelector('.map-toolbar').insertAdjacentHTML('beforeend',
+        `<button class="map-btn" id="btn-clear-gpx">${icons.trash}<span>${t('clear')}</span></button>`);
       root.querySelector('#btn-clear-gpx').onclick = () => {
-        trip.gpx = null;
-        saveState();
+        trip.gpx = null; saveState();
         if (_routeLayer) { _map.removeLayer(_routeLayer); _routeLayer = null; }
         root.querySelector('#btn-clear-gpx').remove();
         root.querySelector('.gpx-filename')?.remove();
-        showToast('Route cleared');
+        showToast('Route gelöscht');
       };
     }
   };
@@ -910,8 +995,6 @@ function parseGPX(xmlString) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlString, 'text/xml');
   const points = [];
-
-  // Try track points, then route points, then waypoints
   for (const tag of ['trkpt', 'rtept', 'wpt']) {
     const els = doc.getElementsByTagName(tag);
     if (els.length > 0) {
@@ -935,7 +1018,7 @@ function toggleLocation(root) {
     btn.classList.remove('active');
     return;
   }
-  if (!navigator.geolocation) { showToast('Geolocation not supported'); return; }
+  if (!navigator.geolocation) { showToast('Standort nicht verfügbar'); return; }
   btn.classList.add('active');
   _watchId = navigator.geolocation.watchPosition(
     pos => {
@@ -946,18 +1029,13 @@ function toggleLocation(root) {
         const dot = L.divIcon({
           className: '',
           html: `<div style="width:14px;height:14px;background:#2563eb;border:2.5px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3)"></div>`,
-          iconSize: [14, 14],
-          iconAnchor: [7, 7],
+          iconSize: [14,14], iconAnchor: [7,7],
         });
         _locationMarker = L.marker(latlng, { icon: dot }).addTo(_map);
         _map.setView(latlng, Math.max(_map.getZoom(), 14));
       }
     },
-    err => {
-      showToast('Location unavailable');
-      btn.classList.remove('active');
-      _watchId = null;
-    },
+    () => { showToast('Standort nicht verfügbar'); btn.classList.remove('active'); _watchId = null; },
     { enableHighAccuracy: true, maximumAge: 5000 }
   );
 }
@@ -974,18 +1052,15 @@ function lngLatToTile(lat, lng, zoom) {
 
 function getTileUrls(bounds, minZ, maxZ) {
   const urls = [];
-  const subdomains = ['a', 'b', 'c'];
+  const sub = ['a','b','c'];
   for (let z = minZ; z <= maxZ; z++) {
     const sw = lngLatToTile(bounds.getSouth(), bounds.getWest(), z);
     const ne = lngLatToTile(bounds.getNorth(), bounds.getEast(), z);
-    const x0 = Math.min(sw.x, ne.x), x1 = Math.max(sw.x, ne.x);
-    const y0 = Math.min(sw.y, ne.y), y1 = Math.max(sw.y, ne.y);
-    for (let x = x0; x <= x1; x++) {
-      for (let y = y0; y <= y1; y++) {
-        const s = subdomains[(x + y) % 3];
-        urls.push(`https://${s}.tile.openstreetmap.org/${z}/${x}/${y}.png`);
-      }
-    }
+    const x0 = Math.min(sw.x,ne.x), x1 = Math.max(sw.x,ne.x);
+    const y0 = Math.min(sw.y,ne.y), y1 = Math.max(sw.y,ne.y);
+    for (let x = x0; x <= x1; x++)
+      for (let y = y0; y <= y1; y++)
+        urls.push(`https://${sub[(x+y)%3]}.tile.openstreetmap.org/${z}/${x}/${y}.png`);
   }
   return urls;
 }
@@ -993,23 +1068,24 @@ function getTileUrls(bounds, minZ, maxZ) {
 function renderSavedAreas(trip, container) {
   const areas = trip.offlineAreas || [];
   if (areas.length === 0) {
-    container.innerHTML = `<p class="offline-empty">No areas saved yet.</p>`;
+    container.innerHTML = `<p class="offline-empty">${t('noAreas')}</p>`;
     return;
   }
+  const locale = settings.lang === 'de' ? 'de-DE' : 'en-GB';
   container.innerHTML = areas.map(a => `
     <div class="offline-area-row">
       <button class="offline-area-body" data-fly-area="${esc(a.id)}">
         <div class="offline-area-name">${esc(a.label)}</div>
-        <div class="offline-area-meta">z${a.minZ}–${a.maxZ} · ${a.tileCount} tiles · ${new Date(a.savedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</div>
-        <div class="offline-area-hint">${icons.map} Show on map</div>
+        <div class="offline-area-meta">z${a.minZ}–${a.maxZ} · ${a.tileCount} Tiles · ${new Date(a.savedAt).toLocaleDateString(locale,{day:'numeric',month:'short'})}</div>
+        <div class="offline-area-hint">${icons.map} ${t('showOnMap')}</div>
       </button>
-      <button class="offline-area-del" data-del-area="${esc(a.id)}" aria-label="Delete">${icons.trash}</button>
+      <button class="offline-area-del" data-del-area="${esc(a.id)}">${icons.trash}</button>
     </div>
   `).join('');
 
   container.querySelectorAll('[data-fly-area]').forEach(btn => {
     btn.onclick = () => {
-      const area = (trip.offlineAreas || []).find(a => a.id === btn.dataset.flyArea);
+      const area = (trip.offlineAreas||[]).find(a => a.id === btn.dataset.flyArea);
       if (area) flyToOfflineArea(area);
     };
   });
@@ -1017,24 +1093,18 @@ function renderSavedAreas(trip, container) {
   container.querySelectorAll('[data-del-area]').forEach(btn => {
     btn.onclick = async e => {
       e.stopPropagation();
-      const areaId = btn.dataset.delArea;
-      const area = (trip.offlineAreas || []).find(a => a.id === areaId);
+      const area = (trip.offlineAreas||[]).find(a => a.id === btn.dataset.delArea);
       if (!area) return;
       const b = area.bounds;
-      const fakeBounds = {
-        getSouth: () => b.south, getWest: () => b.west,
-        getNorth: () => b.north, getEast: () => b.east,
-      };
-      const urls = getTileUrls(fakeBounds, area.minZ, area.maxZ);
+      const fb = { getSouth:()=>b.south, getWest:()=>b.west, getNorth:()=>b.north, getEast:()=>b.east };
       const cache = await caches.open('wandern-v1');
-      await Promise.all(urls.map(u => cache.delete(u)));
-      trip.offlineAreas = trip.offlineAreas.filter(a => a.id !== areaId);
+      await Promise.all(getTileUrls(fb, area.minZ, area.maxZ).map(u => cache.delete(u)));
+      trip.offlineAreas = trip.offlineAreas.filter(a => a.id !== btn.dataset.delArea);
       saveState();
       btn.closest('.offline-area-row').remove();
-      if (!container.querySelector('.offline-area-row')) {
-        container.innerHTML = `<p class="offline-empty">No areas saved yet.</p>`;
-      }
-      showToast('Area deleted');
+      if (!container.querySelector('.offline-area-row'))
+        container.innerHTML = `<p class="offline-empty">${t('noAreas')}</p>`;
+      showToast('Bereich gelöscht');
     };
   });
 }
@@ -1043,16 +1113,10 @@ function flyToOfflineArea(area) {
   closeModal();
   if (!_map) return;
   const b = area.bounds;
-  const leafletBounds = [[b.south, b.west], [b.north, b.east]];
-  if (_areaRect) { _map.removeLayer(_areaRect); }
-  _areaRect = L.rectangle(leafletBounds, {
-    color: '#2d6a4f',
-    weight: 2,
-    fillColor: '#74c69d',
-    fillOpacity: 0.12,
-    dashArray: '6,4',
-  }).addTo(_map);
-  _map.fitBounds(leafletBounds, { padding: [24, 24] });
+  const lb = [[b.south,b.west],[b.north,b.east]];
+  if (_areaRect) _map.removeLayer(_areaRect);
+  _areaRect = L.rectangle(lb, { color:'#2d6a4f', weight:2, fillColor:'#74c69d', fillOpacity:.12, dashArray:'6,4' }).addTo(_map);
+  _map.fitBounds(lb, { padding:[24,24] });
 }
 
 function openOfflineModal(trip) {
@@ -1061,45 +1125,42 @@ function openOfflineModal(trip) {
   const zoom = _map.getZoom();
   const minZ = Math.max(6, zoom - 2);
   const maxZ = Math.min(16, zoom + 2);
-
   const countTiles = (mn, mx) => getTileUrls(bounds, mn, mx).length;
 
   openModal(`
-    <div class="modal-title">Offline Maps</div>
-
-    <div class="offline-section-label">Saved areas</div>
+    <div class="modal-title">${t('offlineMaps')}</div>
+    <div class="offline-section-label">${t('savedAreas')}</div>
     <div id="m-saved-areas" class="offline-areas-list"></div>
-
-    <div class="offline-section-label" style="margin-top:16px;">Download visible area</div>
+    <div class="offline-section-label" style="margin-top:16px;">${t('downloadArea')}</div>
     <div class="field" style="padding-top:6px;">
-      <label style="font-size:.8rem;color:var(--text-muted);font-weight:400;">Pan and zoom the map to your hiking region first, then download.</label>
+      <label style="font-size:.8rem;color:var(--text-muted);font-weight:400;">Karte auf die gewünschte Region zoomen, dann herunterladen.</label>
     </div>
     <div class="field">
-      <label>Name</label>
-      <input id="m-area-name" type="text" placeholder="e.g. Jotunheimen North" maxlength="50">
+      <label>${t('areaName')}</label>
+      <input id="m-area-name" type="text" placeholder="${t('areaNamePlaceholder')}" maxlength="50">
     </div>
     <div class="field">
-      <label>Zoom range <span style="font-weight:400;color:var(--text-muted)">(higher = more detail, more data)</span></label>
+      <label>${t('zoomRange')} <span style="font-weight:400;color:var(--text-muted)">${t('zoomHint')}</span></label>
       <div style="display:flex;gap:8px;align-items:center;">
-        <select id="m-minz" style="flex:1;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:.93rem;background:var(--bg)">
-          ${[8,9,10,11,12,13,14].map(z => `<option value="${z}" ${z===minZ?'selected':''}>${z}</option>`).join('')}
+        <select id="m-minz" style="flex:1;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:.93rem;background:var(--bg);color:var(--text)">
+          ${[8,9,10,11,12,13,14].map(z=>`<option value="${z}" ${z===minZ?'selected':''}>${z}</option>`).join('')}
         </select>
-        <span style="color:var(--text-muted)">to</span>
-        <select id="m-maxz" style="flex:1;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:.93rem;background:var(--bg)">
-          ${[10,11,12,13,14,15,16].map(z => `<option value="${z}" ${z===maxZ?'selected':''}>${z}</option>`).join('')}
+        <span style="color:var(--text-muted)">–</span>
+        <select id="m-maxz" style="flex:1;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:.93rem;background:var(--bg);color:var(--text)">
+          ${[10,11,12,13,14,15,16].map(z=>`<option value="${z}" ${z===maxZ?'selected':''}>${z}</option>`).join('')}
         </select>
       </div>
-      <div id="m-tile-count" style="font-size:.8rem;color:var(--text-muted);margin-top:6px;">~${countTiles(minZ, maxZ)} tiles</div>
+      <div id="m-tile-count" style="font-size:.8rem;color:var(--text-muted);margin-top:6px;">~${countTiles(minZ,maxZ)} Tiles</div>
     </div>
     <div id="m-dl-progress" style="display:none;padding:0 20px 8px;">
-      <div style="font-size:.85rem;color:var(--text-soft);margin-bottom:6px;" id="m-dl-status">Downloading…</div>
+      <div style="font-size:.85rem;color:var(--text-soft);margin-bottom:6px;" id="m-dl-status">Lädt…</div>
       <div style="background:var(--border);border-radius:4px;height:6px;overflow:hidden;">
         <div id="m-dl-bar" style="background:var(--green);height:100%;width:0%;transition:width .2s;"></div>
       </div>
     </div>
     <div class="modal-actions">
-      <button class="btn-secondary" id="m-dl-cancel" onclick="closeModal()">Close</button>
-      <button class="btn-primary" id="m-dl-start">Download</button>
+      <button class="btn-secondary" onclick="closeModal()">${t('close')}</button>
+      <button class="btn-primary" id="m-dl-start">${t('download')}</button>
     </div>
   `);
 
@@ -1108,8 +1169,7 @@ function openOfflineModal(trip) {
   const updateCount = () => {
     const mn = parseInt(document.getElementById('m-minz').value);
     const mx = parseInt(document.getElementById('m-maxz').value);
-    if (mx < mn) return;
-    document.getElementById('m-tile-count').textContent = `~${countTiles(mn, mx)} tiles`;
+    if (mx >= mn) document.getElementById('m-tile-count').textContent = `~${countTiles(mn,mx)} Tiles`;
   };
   document.getElementById('m-minz').onchange = updateCount;
   document.getElementById('m-maxz').onchange = updateCount;
@@ -1117,13 +1177,11 @@ function openOfflineModal(trip) {
   document.getElementById('m-dl-start').onclick = async () => {
     const mn = parseInt(document.getElementById('m-minz').value);
     const mx = parseInt(document.getElementById('m-maxz').value);
-    if (mx < mn) { showToast('Max zoom must be ≥ min zoom'); return; }
+    if (mx < mn) { showToast('Max-Zoom muss ≥ Min-Zoom sein'); return; }
     const label = document.getElementById('m-area-name').value.trim()
-      || `Area ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+      || `Bereich ${new Date().toLocaleDateString('de-DE',{day:'numeric',month:'short'})}`;
     const urls = getTileUrls(bounds, mn, mx);
-    if (urls.length > 8000) {
-      if (!confirm(`${urls.length} tiles (~${Math.round(urls.length * 25 / 1024)} MB). Continue?`)) return;
-    }
+    if (urls.length > 8000 && !confirm(`${urls.length} Tiles (~${Math.round(urls.length*25/1024)} MB). Fortfahren?`)) return;
 
     document.getElementById('m-dl-start').disabled = true;
     document.getElementById('m-dl-progress').style.display = 'block';
@@ -1132,36 +1190,30 @@ function openOfflineModal(trip) {
 
     let done = 0, failed = 0;
     const cache = await caches.open('wandern-v1');
-    const BATCH = 6;
-
-    for (let i = 0; i < urls.length; i += BATCH) {
-      const batch = urls.slice(i, i + BATCH);
-      await Promise.all(batch.map(async url => {
+    for (let i = 0; i < urls.length; i += 6) {
+      await Promise.all(urls.slice(i, i+6).map(async url => {
         try {
           if (!(await cache.match(url))) {
-            const res = await fetch(url, { mode: 'cors' });
+            const res = await fetch(url, { mode:'cors' });
             if (res.ok) await cache.put(url, res);
           }
         } catch { failed++; }
         done++;
-        bar.style.width = `${Math.round(done / urls.length * 100)}%`;
-        status.textContent = `${done} / ${urls.length} tiles saved`;
+        bar.style.width = `${Math.round(done/urls.length*100)}%`;
+        status.textContent = `${done} / ${urls.length} Tiles gespeichert`;
       }));
     }
 
     const success = done - failed;
-    status.textContent = failed > 0 ? `Done — ${success} saved, ${failed} failed` : `All ${done} tiles saved`;
+    status.textContent = failed > 0 ? `Fertig — ${success} gespeichert, ${failed} fehlgeschlagen` : `Alle ${done} Tiles gespeichert`;
     bar.style.background = failed > 0 ? '#f59e0b' : 'var(--green)';
     document.getElementById('m-dl-start').disabled = false;
 
     if (success > 0) {
       const area = {
-        id: uid(),
-        label,
-        bounds: { south: bounds.getSouth(), west: bounds.getWest(), north: bounds.getNorth(), east: bounds.getEast() },
-        minZ: mn, maxZ: mx,
-        tileCount: success,
-        savedAt: Date.now(),
+        id: uid(), label,
+        bounds: { south:bounds.getSouth(), west:bounds.getWest(), north:bounds.getNorth(), east:bounds.getEast() },
+        minZ: mn, maxZ: mx, tileCount: success, savedAt: Date.now(),
       };
       if (!trip.offlineAreas) trip.offlineAreas = [];
       trip.offlineAreas.push(area);
@@ -1174,9 +1226,8 @@ function openOfflineModal(trip) {
 
 // ── Init ───────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {});
-  });
+  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
 
+applySettings();
 handleRoute();
