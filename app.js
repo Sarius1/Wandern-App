@@ -412,7 +412,9 @@ function openAddDayModal(trip) {
     trip.days.push({ id: uid(), label, date: document.getElementById('m-day-date').value, entries: [] });
     saveState();
     closeModal();
-    navigate(`/trip/${trip.id}`);
+    // Re-render in place — navigate() won't fire if URL hasn't changed
+    const tabContent = document.getElementById('tab-content');
+    if (tabContent) renderDaysTab(tabContent, trip);
   };
   document.getElementById('m-save-day').onclick = save;
   document.getElementById('m-day-label').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
@@ -745,14 +747,45 @@ function formatBytes(bytes) {
   return (bytes/1048576).toFixed(1) + ' MB';
 }
 
+function dataURLToBlob(dataURL) {
+  const [header, b64] = dataURL.split(',');
+  const mime = header.match(/:(.*?);/)[1];
+  const binary = atob(b64);
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
 function openTicket(ticket) {
   if (!ticket) return;
-  const a = document.createElement('a');
-  a.href = ticket.data;
-  a.target = '_blank';
-  a.rel = 'noopener';
-  // For PDFs open in new tab; for images too
-  a.click();
+  if (ticket.fileType?.startsWith('image/')) {
+    openLightbox(ticket.data, ticket.name);
+  } else {
+    // Blob URL works in Safari where data: URLs in new tabs are blocked
+    const url = URL.createObjectURL(dataURLToBlob(ticket.data));
+    const win = window.open(url, '_blank');
+    // If popup was blocked, fall back to same-window navigation
+    if (!win) window.location.href = url;
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+}
+
+function openLightbox(src, title) {
+  const lb = document.createElement('div');
+  lb.className = 'lightbox';
+  lb.innerHTML = `
+    <div class="lightbox-header">
+      <span class="lightbox-title">${esc(title)}</span>
+      <button class="lightbox-close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="lightbox-body">
+      <img src="${src}" alt="${esc(title)}">
+    </div>
+  `;
+  lb.querySelector('.lightbox-close').onclick = () => lb.remove();
+  document.body.appendChild(lb);
 }
 
 // ── Map Tab ────────────────────────────────────────────────
