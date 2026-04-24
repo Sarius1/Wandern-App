@@ -514,7 +514,7 @@ function renderDaysTab(root, trip) {
                 <div class="day-card-num">${i+1}</div>
                 <div class="day-card-info">
                   <div class="day-card-label">${esc(day.label)}</div>
-                  ${day.date ? `<div class="day-card-date">${formatDate(day.date)}</div>` : ''}
+                  ${day.subtitle ? `<div class="day-card-subtitle">${esc(day.subtitle)}</div>` : (day.date ? `<div class="day-card-date">${formatDate(day.date)}</div>` : '')}
                 </div>
                 ${count > 0 ? `<span class="day-card-count">${count} Eintr${count===1?'ag':'äge'}</span>` : ''}
                 <div class="day-card-arrow">${icons.chevron}</div>
@@ -585,6 +585,7 @@ function renderDayView(root, tripId, dayId) {
       <button class="btn-icon" id="btn-day-menu">${icons.more}</button>
     </div>
     <div class="scroll-area" style="flex:1;">
+      <textarea class="day-subtitle-input" id="day-subtitle" placeholder="${settings.lang === 'de' ? 'Kurze Beschreibung des Tages…' : 'Short description of the day…'}" rows="2">${esc(day.subtitle||'')}</textarea>
       <div class="entries-list" id="entries-list">
         ${(day.entries||[]).map(e => renderEntry(e)).join('')}
       </div>
@@ -597,6 +598,7 @@ function renderDayView(root, tripId, dayId) {
   el.querySelector('#btn-back').onclick = () => navigate(`/trip/${tripId}`);
   el.querySelector('#btn-day-menu').onclick = () => openDayMenu(trip, day);
   el.querySelector('#btn-add-entry').onclick = () => openAddEntryModal(trip, day, el);
+  el.querySelector('#day-subtitle').oninput = e => { day.subtitle = e.target.value; saveState(); };
   bindEntryEvents(el, trip, day);
 }
 
