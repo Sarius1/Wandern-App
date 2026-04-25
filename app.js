@@ -47,6 +47,7 @@ const TR = {
     addDayTitle: 'Add Day', label: 'Label', date: 'Date (optional)',
     settings: 'Settings', language: 'Language', darkMode: 'Dark Mode',
     gpx: 'GPX', location: 'Location', saveOffline: 'Save offline',
+    locationDenied: 'Location denied – enable in Settings > Privacy', locationUnavailable: 'Location unavailable',
     offlineMaps: 'Offline Maps', savedAreas: 'Saved areas',
     downloadArea: 'Download visible area',
     noAreas: 'No areas saved yet.',
@@ -80,6 +81,7 @@ const TR = {
     addDayTitle: 'Tag hinzufügen', label: 'Bezeichnung', date: 'Datum (optional)',
     settings: 'Einstellungen', language: 'Sprache', darkMode: 'Dunkelmodus',
     gpx: 'GPX', location: 'Standort', saveOffline: 'Offline speichern',
+    locationDenied: 'Standort abgelehnt – bitte in Einstellungen > Datenschutz aktivieren', locationUnavailable: 'Standort nicht verfügbar',
     offlineMaps: 'Offline-Karten', savedAreas: 'Gespeicherte Bereiche',
     downloadArea: 'Sichtbaren Bereich laden',
     noAreas: 'Noch keine Bereiche gespeichert.',
@@ -920,7 +922,7 @@ function renderMapTab(root, trip) {
       <button class="map-btn" id="btn-offline">${icons.upload}<span>${t('saveOffline')}</span></button>
       ${trip.gpx ? `<button class="map-btn" id="btn-clear-gpx">${icons.trash}<span>${t('clear')}</span></button>` : ''}
     </div>
-    <input type="file" id="gpx-file-input" accept=".gpx,application/gpx+xml,text/xml">
+    <input type="file" id="gpx-file-input" accept="*">
   `;
 
   root.querySelector('#btn-gpx').onclick = () => root.querySelector('#gpx-file-input').click();
@@ -1023,7 +1025,7 @@ function toggleLocation(root) {
     btn.classList.remove('active');
     return;
   }
-  if (!navigator.geolocation) { showToast('Standort nicht verfügbar'); return; }
+  if (!navigator.geolocation) { showToast(t('locationUnavailable')); return; }
   btn.classList.add('active');
   _watchId = navigator.geolocation.watchPosition(
     pos => {
@@ -1040,7 +1042,14 @@ function toggleLocation(root) {
         _map.setView(latlng, Math.max(_map.getZoom(), 14));
       }
     },
-    () => { showToast('Standort nicht verfügbar'); btn.classList.remove('active'); _watchId = null; },
+    err => {
+      btn.classList.remove('active'); _watchId = null;
+      if (err.code === 1) {
+        showToast(t('locationDenied'));
+      } else {
+        showToast(t('locationUnavailable'));
+      }
+    },
     { enableHighAccuracy: true, maximumAge: 5000 }
   );
 }
