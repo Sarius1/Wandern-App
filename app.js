@@ -1251,7 +1251,7 @@ function refreshTrackHUD() {
     </div>`;
 }
 
-async function routeToCanvas(points) {
+async function routeToCanvas(points, gpxPoints = []) {
   const W = 360, H = 200;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -1260,9 +1260,12 @@ async function routeToCanvas(points) {
   ctx.fillRect(0, 0, W, H);
   if (points.length < 2) return canvas.toDataURL('image/png');
 
+  // Bounding box includes both the tracked route and any GPX route
   const lats = points.map(p => p.lat), lons = points.map(p => p.lon);
-  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const allLats = [...lats, ...gpxPoints.map(p => p[0])];
+  const allLons = [...lons, ...gpxPoints.map(p => p[1])];
+  const minLat = Math.min(...allLats), maxLat = Math.max(...allLats);
+  const minLon = Math.min(...allLons), maxLon = Math.max(...allLons);
 
   // Find zoom where route + 1-tile padding fits in ≤16 tiles
   let zoom = 16, tileNW, tileSE, tilesX = 1, tilesY = 1;
@@ -1300,6 +1303,20 @@ async function routeToCanvas(points) {
     return { x: (ft.x - tileNW.x) / tilesX * W, y: (ft.y - tileNW.y) / tilesY * H };
   };
 
+  // GPX route drawn first (below the tracked route)
+  if (gpxPoints.length >= 2) {
+    ctx.beginPath();
+    ctx.strokeStyle = '#2d6a4f';
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.7;
+    gpxPoints.forEach(([lat, lon], i) => { const { x, y } = project(lat, lon); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Tracked route on top
   ctx.shadowColor = 'rgba(255,255,255,.85)';
   ctx.shadowBlur = 3;
   ctx.beginPath();
@@ -1329,7 +1346,25 @@ function lngLatToTileFloat(lat, lng, zoom) {
   };
 }
 
-function loadTileImage(url) {
+async function loadTileImage(url) {
+  // Try service worker cache first — works offline when area was pre-downloaded
+  if ('caches' in window) {
+    try {
+      const cache = await caches.open('wandern-v1');
+      const cached = await cache.match(url);
+      if (cached) {
+        const blob = await cached.blob();
+        const objUrl = URL.createObjectURL(blob);
+        return new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => { URL.revokeObjectURL(objUrl); resolve(img); };
+          img.onerror = () => { URL.revokeObjectURL(objUrl); reject(); };
+          img.src = objUrl;
+        });
+      }
+    } catch { /* cache unavailable */ }
+  }
+  // Fall back to network
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -1359,7 +1394,8 @@ function finishTracking(trip, showSummary = true) {
 
   const distance = totalDistance(_trackPoints);
   const avgPace = distance > 0 ? Math.round(duration / (distance / 1000)) : 0;
-  routeToCanvas(_trackPoints).then(mapImage => {
+  const gpxPoints = trip.gpx ? parseGPX(trip.gpx.data) : [];
+  routeToCanvas(_trackPoints, gpxPoints).then(mapImage => {
     openSaveHikeModal(trip, { duration, distance: Math.round(distance), avgPace, mapImage });
   });
 }
