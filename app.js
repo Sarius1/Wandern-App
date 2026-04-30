@@ -627,6 +627,7 @@ function renderEntry(entry) {
           <span class="entry-type-badge hike">${t('hikeEntry')}</span>
           <button class="entry-delete" data-del="${esc(entry.id)}">${icons.trash}</button>
         </div>
+        ${entry.mapImage ? `<img src="${entry.mapImage}" class="hike-route-img" alt="">` : ''}
         <div class="hike-entry-stats">
           <div class="hike-entry-stat"><div class="hike-entry-val">${distKm}</div><div class="hike-entry-label">km</div></div>
           <div class="hike-entry-stat"><div class="hike-entry-val">${formatDuration(entry.duration)}</div><div class="hike-entry-label">${t('time')}</div></div>
@@ -1205,6 +1206,62 @@ function updateTrackHUD(root) {
     </div>`;
 }
 
+function routeToCanvas(points) {
+  const W = 360, H = 200;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  const lats = points.map(p => p.lat), lons = points.map(p => p.lon);
+  let minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  let minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const dLat = (maxLat - minLat) || 0.001, dLon = (maxLon - minLon) || 0.001;
+  const pad = 0.18;
+  minLat -= dLat * pad; maxLat += dLat * pad;
+  minLon -= dLon * pad; maxLon += dLon * pad;
+
+  const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
+  const rangeLatM = (maxLat - minLat) * 111320;
+  const rangeLonM = (maxLon - minLon) * 111320 * cosLat;
+  const scale = Math.min(W / rangeLonM, H / rangeLatM);
+  const dW = rangeLonM * scale, dH = rangeLatM * scale;
+  const ox = (W - dW) / 2, oy = (H - dH) / 2;
+
+  const px = (lat, lon) => ({
+    x: ox + (lon - minLon) / (maxLon - minLon) * dW,
+    y: oy + (maxLat - lat) / (maxLat - minLat) * dH,
+  });
+
+  ctx.fillStyle = '#eef2ea';
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.beginPath();
+  ctx.strokeStyle = '#e05c1f';
+  ctx.lineWidth = 3.5;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  points.forEach((p, i) => {
+    const { x, y } = px(p.lat, p.lon);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  const dot = (lat, lon, color) => {
+    const { x, y } = px(lat, lon);
+    ctx.beginPath();
+    ctx.fillStyle = color;
+    ctx.arc(x, y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  };
+  dot(points[0].lat, points[0].lon, '#2d6a4f');
+  dot(points[points.length - 1].lat, points[points.length - 1].lon, '#dc2626');
+
+  return canvas.toDataURL('image/png');
+}
+
 function stopTracking(root, trip, showSummary = true) {
   if (!_trackActive) return;
   _trackActive = false;
@@ -1225,11 +1282,12 @@ function stopTracking(root, trip, showSummary = true) {
   const duration = Math.floor((Date.now() - _trackStartTime) / 1000);
   const distance = totalDistance(_trackPoints);
   const avgPace = distance > 0 ? Math.round(duration / (distance / 1000)) : 0;
-  openSaveHikeModal(trip, { duration, distance: Math.round(distance), avgPace });
+  const mapImage = routeToCanvas(_trackPoints);
+  openSaveHikeModal(trip, { duration, distance: Math.round(distance), avgPace, mapImage });
 }
 
 function openSaveHikeModal(trip, stats) {
-  const { duration, distance, avgPace } = stats;
+  const { duration, distance, avgPace, mapImage } = stats;
   const distKm = (distance / 1000).toFixed(2);
   const paceFmt = avgPace > 0 ? `${Math.floor(avgPace/60)}:${String(avgPace%60).padStart(2,'0')}` : '--:--';
   const dayOptions = (trip.days||[]).map(d =>
@@ -1238,13 +1296,14 @@ function openSaveHikeModal(trip, stats) {
 
   openModal(`
     <div class="modal-title">${t('hikeSummary')}</div>
+    ${mapImage ? `<img src="${mapImage}" class="hike-route-preview">` : ''}
     <div class="hike-summary-stats">
       <div class="hike-stat-block"><div class="hike-stat-val">${distKm}</div><div class="hike-stat-label">km</div></div>
       <div class="hike-stat-block"><div class="hike-stat-val">${formatDuration(duration)}</div><div class="hike-stat-label">${t('time')}</div></div>
       <div class="hike-stat-block"><div class="hike-stat-val">${paceFmt}</div><div class="hike-stat-label">min/km</div></div>
     </div>
     ${dayOptions ? `
-    <div class="field" style="margin-top:12px;">
+    <div class="field" style="margin-top:4px;">
       <label>${t('saveToDay')}</label>
       <select id="m-hike-day" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:.93rem;background:var(--bg);color:var(--text)">
         <option value="">${t('hikeDontSave')}</option>
@@ -1263,7 +1322,7 @@ function openSaveHikeModal(trip, stats) {
       const day = getDay(trip, dayId);
       if (day) {
         if (!day.entries) day.entries = [];
-        day.entries.push({ id: uid(), type: 'hike', date: new Date().toISOString(), duration, distance, avgPace });
+        day.entries.push({ id: uid(), type: 'hike', date: new Date().toISOString(), duration, distance, avgPace, mapImage: mapImage || null });
         saveState();
         showToast(t('hikeSaved'));
       }
