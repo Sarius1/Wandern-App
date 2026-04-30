@@ -48,7 +48,7 @@ const TR = {
     settings: 'Settings', language: 'Language', darkMode: 'Dark Mode',
     gpx: 'GPX', location: 'Location', saveOffline: 'Save offline',
     locationDenied: 'Location denied – enable in Settings > Privacy', locationUnavailable: 'Location unavailable',
-    trackStart: 'Start Hike', trackStop: 'Stop',
+    trackStart: 'Start Hike', trackPause: 'Pause', trackResume: 'Continue', trackFinish: 'Finish',
     hikeSummary: 'Hike Summary', saveToDay: 'Save to Day',
     hikeDontSave: "Don't save", discard: 'Discard',
     hikeSaved: 'Saved to day', hikeEntry: 'Hike', time: 'Time',
@@ -86,7 +86,7 @@ const TR = {
     settings: 'Einstellungen', language: 'Sprache', darkMode: 'Dunkelmodus',
     gpx: 'GPX', location: 'Standort', saveOffline: 'Offline speichern',
     locationDenied: 'Standort abgelehnt – bitte in Einstellungen > Datenschutz aktivieren', locationUnavailable: 'Standort nicht verfügbar',
-    trackStart: 'Wanderung starten', trackStop: 'Beenden',
+    trackStart: 'Wanderung starten', trackPause: 'Pause', trackResume: 'Weiter', trackFinish: 'Beenden',
     hikeSummary: 'Wanderung beendet', saveToDay: 'Tag zuordnen',
     hikeDontSave: 'Nicht speichern', discard: 'Verwerfen',
     hikeSaved: 'Zum Tag gespeichert', hikeEntry: 'Wanderung', time: 'Zeit',
@@ -151,9 +151,6 @@ function navigate(path) { window.location.hash = path; }
 
 function handleRoute() {
   if (_watchId !== null) { navigator.geolocation.clearWatch(_watchId); _watchId = null; }
-  if (_trackWatchId !== null) { navigator.geolocation.clearWatch(_trackWatchId); _trackWatchId = null; }
-  if (_trackTimer) { clearInterval(_trackTimer); _trackTimer = null; }
-  _trackActive = false;
 
   const hash = decodeURIComponent(window.location.hash.slice(1)) || '/';
   const parts = hash.split('/').filter(Boolean);
@@ -191,6 +188,7 @@ const icons = {
   locate:   `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.94 11A8 8 0 0 0 13 4.06V2h-2v2.06A8 8 0 0 0 4.06 11H2v2h2.06A8 8 0 0 0 11 19.94V22h2v-2.06A8 8 0 0 0 19.94 13H22v-2h-2.06z"/></svg>`,
   gpx:      `<svg viewBox="0 0 24 24"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>`,
   play:     `<svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
+  pause:    `<svg viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
   stop:     `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
   days:     `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   ticket:   `<svg viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"/></svg>`,
@@ -939,6 +937,8 @@ let _locationMarker = null;
 let _watchId = null;
 let _areaRect = null;
 let _trackActive = false;
+let _trackPaused = false;
+let _trackElapsed = 0;
 let _trackPoints = [];
 let _trackLayer = null;
 let _trackDot = null;
@@ -960,9 +960,7 @@ function renderMapTab(root, trip) {
       <button class="map-btn" id="btn-offline">${icons.upload}<span>${t('saveOffline')}</span></button>
       ${trip.gpx ? `<button class="map-btn" id="btn-clear-gpx">${icons.trash}<span>${t('clear')}</span></button>` : ''}
     </div>
-    <div class="map-track-row">
-      <button class="btn-track-start" id="btn-track">${icons.play}<span>${t('trackStart')}</span></button>
-    </div>
+    <div class="map-track-row" id="map-track-row"></div>
     <input type="file" id="gpx-file-input" accept="*">
   `;
 
@@ -970,11 +968,6 @@ function renderMapTab(root, trip) {
   root.querySelector('#gpx-file-input').onchange = e => handleGpxUpload(e, trip, root);
   root.querySelector('#btn-locate').onclick = () => toggleLocation(root);
   root.querySelector('#btn-offline').onclick = () => openOfflineModal(trip);
-  root.querySelector('#btn-track').onclick = () => {
-    if (_trackActive) stopTracking(root, trip);
-    else startTracking(root, trip);
-  };
-
   const clearBtn = root.querySelector('#btn-clear-gpx');
   if (clearBtn) clearBtn.onclick = () => {
     trip.gpx = null;
@@ -985,6 +978,7 @@ function renderMapTab(root, trip) {
     showToast('Route gelöscht');
   };
 
+  syncTrackUI(root, trip);
   requestAnimationFrame(() => initMap(trip));
 }
 
@@ -1004,6 +998,18 @@ function initMap(trip) {
       _routeLayer = L.polyline(points, { color: '#2d6a4f', weight: 4, opacity: .85 }).addTo(_map);
       _map.fitBounds(_routeLayer.getBounds(), { padding: [24, 24] });
     }
+  }
+
+  if (_trackActive && _trackPoints.length > 0) {
+    const latlngs = _trackPoints.map(p => [p.lat, p.lon]);
+    _trackLayer = L.polyline(latlngs, { color: '#e05c1f', weight: 5, opacity: .9 }).addTo(_map);
+    const last = _trackPoints[_trackPoints.length - 1];
+    _trackDot = L.marker([last.lat, last.lon], { icon: L.divIcon({
+      className: '',
+      html: `<div style="width:16px;height:16px;background:#e05c1f;border:3px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.4)"></div>`,
+      iconSize: [16,16], iconAnchor: [8,8],
+    })}).addTo(_map);
+    _map.setView([last.lat, last.lon], Math.max(_map.getZoom(), 14));
   }
 }
 
@@ -1128,63 +1134,102 @@ function formatPace(mPerSec) {
   return `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
 }
 
-function startTracking(root, trip) {
+function syncTrackUI(root, trip) {
+  const row = root.querySelector('#map-track-row');
+  const hud = root.querySelector('#track-hud');
+  if (!row) return;
+  if (!_trackActive) {
+    row.innerHTML = `<button class="btn-track-start" id="btn-track">${icons.play}<span>${t('trackStart')}</span></button>`;
+    row.querySelector('#btn-track').onclick = () => { startTracking(trip); syncTrackUI(root, trip); };
+    if (hud) hud.style.display = 'none';
+  } else if (_trackPaused) {
+    row.innerHTML = `<div class="track-btn-row">
+      <button class="btn-track-start resume" id="btn-resume">${icons.play}<span>${t('trackResume')}</span></button>
+      <button class="btn-track-end" id="btn-finish">${icons.stop}<span>${t('trackFinish')}</span></button>
+    </div>`;
+    row.querySelector('#btn-resume').onclick = () => { resumeTracking(trip); syncTrackUI(root, trip); };
+    row.querySelector('#btn-finish').onclick = () => { finishTracking(trip); syncTrackUI(root, trip); };
+    if (hud) { hud.style.display = 'block'; refreshTrackHUD(); }
+  } else {
+    row.innerHTML = `<button class="btn-track-start stop" id="btn-track">${icons.pause}<span>${t('trackPause')}</span></button>`;
+    row.querySelector('#btn-track').onclick = () => { pauseTracking(); syncTrackUI(root, trip); };
+    if (hud) { hud.style.display = 'block'; refreshTrackHUD(); }
+  }
+}
+
+function startTracking(trip) {
   if (_trackActive) return;
   if (!navigator.geolocation) { showToast(t('locationUnavailable')); return; }
   _trackActive = true;
+  _trackPaused = false;
   _trackPoints = [];
+  _trackElapsed = 0;
   _trackStartTime = Date.now();
+  _beginGpsWatch(trip);
+  _trackTimer = setInterval(refreshTrackHUD, 1000);
+  refreshTrackHUD();
+}
 
-  const btn = root.querySelector('#btn-track');
-  btn.classList.add('stop');
-  btn.innerHTML = `${icons.stop}<span>${t('trackStop')}</span>`;
+function pauseTracking() {
+  if (!_trackActive || _trackPaused) return;
+  _trackPaused = true;
+  _trackElapsed += Math.floor((Date.now() - _trackStartTime) / 1000);
+  if (_trackWatchId !== null) { navigator.geolocation.clearWatch(_trackWatchId); _trackWatchId = null; }
+  refreshTrackHUD();
+}
 
-  const hud = root.querySelector('#track-hud');
-  hud.style.display = 'block';
-  updateTrackHUD(root);
-  _trackTimer = setInterval(() => updateTrackHUD(root), 1000);
+function resumeTracking(trip) {
+  if (!_trackActive || !_trackPaused) return;
+  _trackPaused = false;
+  _trackStartTime = Date.now();
+  _beginGpsWatch(trip);
+  refreshTrackHUD();
+}
 
+function _beginGpsWatch(trip) {
   _trackWatchId = navigator.geolocation.watchPosition(
     pos => {
       const pt = { lat: pos.coords.latitude, lon: pos.coords.longitude, ts: pos.timestamp };
       _trackPoints.push(pt);
-
-      const latlngs = _trackPoints.map(p => [p.lat, p.lon]);
-      if (_trackLayer) {
-        _trackLayer.setLatLngs(latlngs);
-      } else {
-        _trackLayer = L.polyline(latlngs, { color: '#e05c1f', weight: 5, opacity: .9 }).addTo(_map);
+      if (_map) {
+        const latlngs = _trackPoints.map(p => [p.lat, p.lon]);
+        if (_trackLayer) {
+          _trackLayer.setLatLngs(latlngs);
+        } else {
+          _trackLayer = L.polyline(latlngs, { color: '#e05c1f', weight: 5, opacity: .9 }).addTo(_map);
+        }
+        const latlng = [pt.lat, pt.lon];
+        if (_trackDot) {
+          _trackDot.setLatLng(latlng);
+        } else {
+          _trackDot = L.marker(latlng, { icon: L.divIcon({
+            className: '',
+            html: `<div style="width:16px;height:16px;background:#e05c1f;border:3px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.4)"></div>`,
+            iconSize: [16,16], iconAnchor: [8,8],
+          })}).addTo(_map);
+          _map.setView(latlng, Math.max(_map.getZoom(), 15));
+        }
       }
-
-      const latlng = [pt.lat, pt.lon];
-      if (_trackDot) {
-        _trackDot.setLatLng(latlng);
-      } else {
-        _trackDot = L.marker(latlng, { icon: L.divIcon({
-          className: '',
-          html: `<div style="width:16px;height:16px;background:#e05c1f;border:3px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.4)"></div>`,
-          iconSize: [16,16], iconAnchor: [8,8],
-        })}).addTo(_map);
-        _map.setView(latlng, Math.max(_map.getZoom(), 15));
-      }
-      updateTrackHUD(root);
+      refreshTrackHUD();
     },
     err => {
-      stopTracking(root, trip, false);
+      finishTracking(trip, false);
       showToast(err.code === 1 ? t('locationDenied') : t('locationUnavailable'));
     },
     { enableHighAccuracy: true, maximumAge: 2000 }
   );
 }
 
-function updateTrackHUD(root) {
-  const hud = root.querySelector('#track-hud');
+function refreshTrackHUD() {
+  const hud = document.getElementById('track-hud');
   if (!hud || !_trackActive) return;
-  const elapsed = Math.floor((Date.now() - _trackStartTime) / 1000);
+  const elapsed = _trackPaused
+    ? _trackElapsed
+    : _trackElapsed + Math.floor((Date.now() - _trackStartTime) / 1000);
   const dist = totalDistance(_trackPoints);
 
   let paceStr = '--:--';
-  if (_trackPoints.length >= 2) {
+  if (!_trackPaused && _trackPoints.length >= 2) {
     const cutoff = Date.now() - 30000;
     const recent = _trackPoints.filter(p => p.ts >= cutoff);
     if (recent.length >= 2) {
@@ -1200,90 +1245,123 @@ function updateTrackHUD(root) {
     <div class="track-hud-inner">
       <div class="track-hud-stat"><span class="track-hud-val">${(dist/1000).toFixed(2)}</span><span class="track-hud-label">km</span></div>
       <div class="track-hud-divider"></div>
-      <div class="track-hud-stat"><span class="track-hud-val">${formatDuration(elapsed)}</span><span class="track-hud-label">${t('time')}</span></div>
+      <div class="track-hud-stat"><span class="track-hud-val">${formatDuration(elapsed)}</span><span class="track-hud-label">${_trackPaused ? '⏸' : t('time')}</span></div>
       <div class="track-hud-divider"></div>
       <div class="track-hud-stat"><span class="track-hud-val">${paceStr}</span><span class="track-hud-label">min/km</span></div>
     </div>`;
 }
 
-function routeToCanvas(points) {
+async function routeToCanvas(points) {
   const W = 360, H = 200;
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#e8f0e8';
+  ctx.fillRect(0, 0, W, H);
+  if (points.length < 2) return canvas.toDataURL('image/png');
 
   const lats = points.map(p => p.lat), lons = points.map(p => p.lon);
-  let minLat = Math.min(...lats), maxLat = Math.max(...lats);
-  let minLon = Math.min(...lons), maxLon = Math.max(...lons);
-  const dLat = (maxLat - minLat) || 0.001, dLon = (maxLon - minLon) || 0.001;
-  const pad = 0.18;
-  minLat -= dLat * pad; maxLat += dLat * pad;
-  minLon -= dLon * pad; maxLon += dLon * pad;
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLon = Math.min(...lons), maxLon = Math.max(...lons);
 
-  const cosLat = Math.cos(((minLat + maxLat) / 2) * Math.PI / 180);
-  const rangeLatM = (maxLat - minLat) * 111320;
-  const rangeLonM = (maxLon - minLon) * 111320 * cosLat;
-  const scale = Math.min(W / rangeLonM, H / rangeLatM);
-  const dW = rangeLonM * scale, dH = rangeLatM * scale;
-  const ox = (W - dW) / 2, oy = (H - dH) / 2;
+  // Find zoom where route + 1-tile padding fits in ≤16 tiles
+  let zoom = 16, tileNW, tileSE, tilesX = 1, tilesY = 1;
+  for (let z = 16; z >= 8; z--) {
+    const nw = lngLatToTile(maxLat, minLon, z);
+    const se = lngLatToTile(minLat, maxLon, z);
+    const tx = se.x - nw.x + 3, ty = se.y - nw.y + 3;
+    tileNW = { x: nw.x - 1, y: nw.y - 1 };
+    tileSE = { x: se.x + 1, y: se.y + 1 };
+    tilesX = tx; tilesY = ty; zoom = z;
+    if (tx * ty <= 16) break;
+  }
+  const maxIdx = (1 << zoom) - 1;
+  tileNW.x = Math.max(0, tileNW.x); tileNW.y = Math.max(0, tileNW.y);
+  tileSE.x = Math.min(maxIdx, tileSE.x); tileSE.y = Math.min(maxIdx, tileSE.y);
+  tilesX = tileSE.x - tileNW.x + 1; tilesY = tileSE.y - tileNW.y + 1;
 
-  const px = (lat, lon) => ({
-    x: ox + (lon - minLon) / (maxLon - minLon) * dW,
-    y: oy + (maxLat - lat) / (maxLat - minLat) * dH,
-  });
+  const tpW = W / tilesX, tpH = H / tilesY;
+  const subs = ['a','b','c'];
+  await Promise.all(
+    Array.from({ length: tilesX }, (_, tx) =>
+      Array.from({ length: tilesY }, (_, ty) => ({ tx, ty }))
+    ).flat().map(async ({ tx, ty }) => {
+      const x = tileNW.x + tx, y = tileNW.y + ty;
+      const url = `https://${subs[(x+y)%3]}.tile.openstreetmap.org/${zoom}/${x}/${y}.png`;
+      try {
+        const img = await loadTileImage(url);
+        ctx.drawImage(img, tx * tpW, ty * tpH, tpW, tpH);
+      } catch { /* leave bg */ }
+    })
+  );
 
-  ctx.fillStyle = '#eef2ea';
-  ctx.fillRect(0, 0, W, H);
+  const project = (lat, lon) => {
+    const ft = lngLatToTileFloat(lat, lon, zoom);
+    return { x: (ft.x - tileNW.x) / tilesX * W, y: (ft.y - tileNW.y) / tilesY * H };
+  };
 
+  ctx.shadowColor = 'rgba(255,255,255,.85)';
+  ctx.shadowBlur = 3;
   ctx.beginPath();
   ctx.strokeStyle = '#e05c1f';
-  ctx.lineWidth = 3.5;
+  ctx.lineWidth = 4;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  points.forEach((p, i) => {
-    const { x, y } = px(p.lat, p.lon);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
+  points.forEach((p, i) => { const { x, y } = project(p.lat, p.lon); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
   ctx.stroke();
+  ctx.shadowBlur = 0;
 
-  const dot = (lat, lon, color) => {
-    const { x, y } = px(lat, lon);
-    ctx.beginPath();
-    ctx.fillStyle = color;
-    ctx.arc(x, y, 6, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+  const drawDot = (lat, lon, color) => {
+    const { x, y } = project(lat, lon);
+    ctx.beginPath(); ctx.fillStyle = color; ctx.arc(x, y, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
   };
-  dot(points[0].lat, points[0].lon, '#2d6a4f');
-  dot(points[points.length - 1].lat, points[points.length - 1].lon, '#dc2626');
+  drawDot(points[0].lat, points[0].lon, '#2d6a4f');
+  drawDot(points[points.length - 1].lat, points[points.length - 1].lon, '#dc2626');
 
-  return canvas.toDataURL('image/png');
+  try { return canvas.toDataURL('image/png'); } catch { return null; }
 }
 
-function stopTracking(root, trip, showSummary = true) {
-  if (!_trackActive) return;
-  _trackActive = false;
+function lngLatToTileFloat(lat, lng, zoom) {
+  return {
+    x: (lng + 180) / 360 * (1 << zoom),
+    y: (1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * (1 << zoom),
+  };
+}
 
+function loadTileImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+function finishTracking(trip, showSummary = true) {
+  if (!_trackActive) return;
+  const duration = _trackPaused
+    ? _trackElapsed
+    : _trackElapsed + Math.floor((Date.now() - _trackStartTime) / 1000);
+
+  _trackActive = false;
+  _trackPaused = false;
   if (_trackWatchId !== null) { navigator.geolocation.clearWatch(_trackWatchId); _trackWatchId = null; }
   if (_trackTimer) { clearInterval(_trackTimer); _trackTimer = null; }
 
-  const btn = root.querySelector('#btn-track');
-  if (btn) { btn.classList.remove('stop'); btn.innerHTML = `${icons.play}<span>${t('trackStart')}</span>`; }
-  const hud = root.querySelector('#track-hud');
+  const hud = document.getElementById('track-hud');
   if (hud) hud.style.display = 'none';
-
-  if (_trackLayer) { _map.removeLayer(_trackLayer); _trackLayer = null; }
-  if (_trackDot) { _map.removeLayer(_trackDot); _trackDot = null; }
+  if (_trackLayer && _map) { _map.removeLayer(_trackLayer); _trackLayer = null; }
+  if (_trackDot && _map) { _map.removeLayer(_trackDot); _trackDot = null; }
 
   if (!showSummary || _trackPoints.length < 2) return;
 
-  const duration = Math.floor((Date.now() - _trackStartTime) / 1000);
   const distance = totalDistance(_trackPoints);
   const avgPace = distance > 0 ? Math.round(duration / (distance / 1000)) : 0;
-  const mapImage = routeToCanvas(_trackPoints);
-  openSaveHikeModal(trip, { duration, distance: Math.round(distance), avgPace, mapImage });
+  routeToCanvas(_trackPoints).then(mapImage => {
+    openSaveHikeModal(trip, { duration, distance: Math.round(distance), avgPace, mapImage });
+  });
 }
 
 function openSaveHikeModal(trip, stats) {
