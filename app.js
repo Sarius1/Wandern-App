@@ -48,6 +48,10 @@ const TR = {
     settings: 'Settings', language: 'Language', darkMode: 'Dark Mode',
     gpx: 'GPX', location: 'Location', saveOffline: 'Save offline',
     locationDenied: 'Location denied – enable in Settings > Privacy', locationUnavailable: 'Location unavailable',
+    trackStart: 'Start Hike', trackStop: 'Stop',
+    hikeSummary: 'Hike Summary', saveToDay: 'Save to Day',
+    hikeDontSave: "Don't save", discard: 'Discard',
+    hikeSaved: 'Saved to day', hikeEntry: 'Hike', time: 'Time',
     offlineMaps: 'Offline Maps', savedAreas: 'Saved areas',
     downloadArea: 'Download visible area',
     noAreas: 'No areas saved yet.',
@@ -82,6 +86,10 @@ const TR = {
     settings: 'Einstellungen', language: 'Sprache', darkMode: 'Dunkelmodus',
     gpx: 'GPX', location: 'Standort', saveOffline: 'Offline speichern',
     locationDenied: 'Standort abgelehnt – bitte in Einstellungen > Datenschutz aktivieren', locationUnavailable: 'Standort nicht verfügbar',
+    trackStart: 'Wanderung starten', trackStop: 'Beenden',
+    hikeSummary: 'Wanderung beendet', saveToDay: 'Tag zuordnen',
+    hikeDontSave: 'Nicht speichern', discard: 'Verwerfen',
+    hikeSaved: 'Zum Tag gespeichert', hikeEntry: 'Wanderung', time: 'Zeit',
     offlineMaps: 'Offline-Karten', savedAreas: 'Gespeicherte Bereiche',
     downloadArea: 'Sichtbaren Bereich laden',
     noAreas: 'Noch keine Bereiche gespeichert.',
@@ -143,6 +151,9 @@ function navigate(path) { window.location.hash = path; }
 
 function handleRoute() {
   if (_watchId !== null) { navigator.geolocation.clearWatch(_watchId); _watchId = null; }
+  if (_trackWatchId !== null) { navigator.geolocation.clearWatch(_trackWatchId); _trackWatchId = null; }
+  if (_trackTimer) { clearInterval(_trackTimer); _trackTimer = null; }
+  _trackActive = false;
 
   const hash = decodeURIComponent(window.location.hash.slice(1)) || '/';
   const parts = hash.split('/').filter(Boolean);
@@ -179,6 +190,8 @@ const icons = {
   trash:    `<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>`,
   locate:   `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.94 11A8 8 0 0 0 13 4.06V2h-2v2.06A8 8 0 0 0 4.06 11H2v2h2.06A8 8 0 0 0 11 19.94V22h2v-2.06A8 8 0 0 0 19.94 13H22v-2h-2.06z"/></svg>`,
   gpx:      `<svg viewBox="0 0 24 24"><path d="M3 12h4l3-9 4 18 3-9h4"/></svg>`,
+  play:     `<svg viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>`,
+  stop:     `<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg>`,
   days:     `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   ticket:   `<svg viewBox="0 0 24 24"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2z"/></svg>`,
   more:     `<svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>`,
@@ -605,6 +618,22 @@ function renderDayView(root, tripId, dayId) {
 }
 
 function renderEntry(entry) {
+  if (entry.type === 'hike') {
+    const distKm = (entry.distance / 1000).toFixed(2);
+    const paceFmt = entry.avgPace > 0 ? `${Math.floor(entry.avgPace/60)}:${String(entry.avgPace%60).padStart(2,'0')}` : '--:--';
+    return `
+      <div class="entry-card" data-entry="${esc(entry.id)}">
+        <div class="entry-header">
+          <span class="entry-type-badge hike">${t('hikeEntry')}</span>
+          <button class="entry-delete" data-del="${esc(entry.id)}">${icons.trash}</button>
+        </div>
+        <div class="hike-entry-stats">
+          <div class="hike-entry-stat"><div class="hike-entry-val">${distKm}</div><div class="hike-entry-label">km</div></div>
+          <div class="hike-entry-stat"><div class="hike-entry-val">${formatDuration(entry.duration)}</div><div class="hike-entry-label">${t('time')}</div></div>
+          <div class="hike-entry-stat"><div class="hike-entry-val">${paceFmt}</div><div class="hike-entry-label">min/km</div></div>
+        </div>
+      </div>`;
+  }
   if (entry.type === 'note') {
     return `
       <div class="entry-card" data-entry="${esc(entry.id)}">
@@ -908,12 +937,20 @@ let _routeLayer = null;
 let _locationMarker = null;
 let _watchId = null;
 let _areaRect = null;
+let _trackActive = false;
+let _trackPoints = [];
+let _trackLayer = null;
+let _trackDot = null;
+let _trackWatchId = null;
+let _trackTimer = null;
+let _trackStartTime = null;
 
 function renderMapTab(root, trip) {
   root.style.overflowY = 'hidden';
   root.innerHTML = `
     <div class="map-container">
       <div id="map"></div>
+      <div class="track-hud" id="track-hud"></div>
       ${trip.gpx ? `<div class="gpx-filename">${esc(trip.gpx.filename)}</div>` : ''}
     </div>
     <div class="map-toolbar">
@@ -922,6 +959,9 @@ function renderMapTab(root, trip) {
       <button class="map-btn" id="btn-offline">${icons.upload}<span>${t('saveOffline')}</span></button>
       ${trip.gpx ? `<button class="map-btn" id="btn-clear-gpx">${icons.trash}<span>${t('clear')}</span></button>` : ''}
     </div>
+    <div class="map-track-row">
+      <button class="btn-track-start" id="btn-track">${icons.play}<span>${t('trackStart')}</span></button>
+    </div>
     <input type="file" id="gpx-file-input" accept="*">
   `;
 
@@ -929,6 +969,10 @@ function renderMapTab(root, trip) {
   root.querySelector('#gpx-file-input').onchange = e => handleGpxUpload(e, trip, root);
   root.querySelector('#btn-locate').onclick = () => toggleLocation(root);
   root.querySelector('#btn-offline').onclick = () => openOfflineModal(trip);
+  root.querySelector('#btn-track').onclick = () => {
+    if (_trackActive) stopTracking(root, trip);
+    else startTracking(root, trip);
+  };
 
   const clearBtn = root.querySelector('#btn-clear-gpx');
   if (clearBtn) clearBtn.onclick = () => {
@@ -944,7 +988,7 @@ function renderMapTab(root, trip) {
 }
 
 function initMap(trip) {
-  if (_map) { _map.remove(); _map = null; _routeLayer = null; _locationMarker = null; _areaRect = null; }
+  if (_map) { _map.remove(); _map = null; _routeLayer = null; _locationMarker = null; _areaRect = null; _trackLayer = null; _trackDot = null; }
 
   _map = L.map('map', { zoomControl: true, attributionControl: true }).setView([47.5, 10.5], 10);
 
@@ -1052,6 +1096,180 @@ function toggleLocation(root) {
     },
     { enableHighAccuracy: true, maximumAge: 5000 }
   );
+}
+
+// ── Hike tracking ──────────────────────────────────────────
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const p1 = lat1 * Math.PI / 180, p2 = lat2 * Math.PI / 180;
+  const dp = (lat2 - lat1) * Math.PI / 180, dl = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dp/2)**2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function totalDistance(points) {
+  let d = 0;
+  for (let i = 1; i < points.length; i++)
+    d += haversine(points[i-1].lat, points[i-1].lon, points[i].lat, points[i].lon);
+  return d;
+}
+
+function formatDuration(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+    : `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function formatPace(mPerSec) {
+  if (mPerSec < 0.1) return '--:--';
+  const spk = 1000 / mPerSec;
+  return `${Math.floor(spk/60)}:${String(Math.round(spk%60)).padStart(2,'0')}`;
+}
+
+function startTracking(root, trip) {
+  if (_trackActive) return;
+  if (!navigator.geolocation) { showToast(t('locationUnavailable')); return; }
+  _trackActive = true;
+  _trackPoints = [];
+  _trackStartTime = Date.now();
+
+  const btn = root.querySelector('#btn-track');
+  btn.classList.add('stop');
+  btn.innerHTML = `${icons.stop}<span>${t('trackStop')}</span>`;
+
+  const hud = root.querySelector('#track-hud');
+  hud.style.display = 'block';
+  updateTrackHUD(root);
+  _trackTimer = setInterval(() => updateTrackHUD(root), 1000);
+
+  _trackWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      const pt = { lat: pos.coords.latitude, lon: pos.coords.longitude, ts: pos.timestamp };
+      _trackPoints.push(pt);
+
+      const latlngs = _trackPoints.map(p => [p.lat, p.lon]);
+      if (_trackLayer) {
+        _trackLayer.setLatLngs(latlngs);
+      } else {
+        _trackLayer = L.polyline(latlngs, { color: '#e05c1f', weight: 5, opacity: .9 }).addTo(_map);
+      }
+
+      const latlng = [pt.lat, pt.lon];
+      if (_trackDot) {
+        _trackDot.setLatLng(latlng);
+      } else {
+        _trackDot = L.marker(latlng, { icon: L.divIcon({
+          className: '',
+          html: `<div style="width:16px;height:16px;background:#e05c1f;border:3px solid #fff;border-radius:50%;box-shadow:0 1px 5px rgba(0,0,0,.4)"></div>`,
+          iconSize: [16,16], iconAnchor: [8,8],
+        })}).addTo(_map);
+        _map.setView(latlng, Math.max(_map.getZoom(), 15));
+      }
+      updateTrackHUD(root);
+    },
+    err => {
+      stopTracking(root, trip, false);
+      showToast(err.code === 1 ? t('locationDenied') : t('locationUnavailable'));
+    },
+    { enableHighAccuracy: true, maximumAge: 2000 }
+  );
+}
+
+function updateTrackHUD(root) {
+  const hud = root.querySelector('#track-hud');
+  if (!hud || !_trackActive) return;
+  const elapsed = Math.floor((Date.now() - _trackStartTime) / 1000);
+  const dist = totalDistance(_trackPoints);
+
+  let paceStr = '--:--';
+  if (_trackPoints.length >= 2) {
+    const cutoff = Date.now() - 30000;
+    const recent = _trackPoints.filter(p => p.ts >= cutoff);
+    if (recent.length >= 2) {
+      let rd = 0;
+      for (let i = 1; i < recent.length; i++)
+        rd += haversine(recent[i-1].lat, recent[i-1].lon, recent[i].lat, recent[i].lon);
+      const dt = (recent[recent.length-1].ts - recent[0].ts) / 1000;
+      if (dt > 0 && rd > 10) paceStr = formatPace(rd / dt);
+    }
+  }
+
+  hud.innerHTML = `
+    <div class="track-hud-inner">
+      <div class="track-hud-stat"><span class="track-hud-val">${(dist/1000).toFixed(2)}</span><span class="track-hud-label">km</span></div>
+      <div class="track-hud-divider"></div>
+      <div class="track-hud-stat"><span class="track-hud-val">${formatDuration(elapsed)}</span><span class="track-hud-label">${t('time')}</span></div>
+      <div class="track-hud-divider"></div>
+      <div class="track-hud-stat"><span class="track-hud-val">${paceStr}</span><span class="track-hud-label">min/km</span></div>
+    </div>`;
+}
+
+function stopTracking(root, trip, showSummary = true) {
+  if (!_trackActive) return;
+  _trackActive = false;
+
+  if (_trackWatchId !== null) { navigator.geolocation.clearWatch(_trackWatchId); _trackWatchId = null; }
+  if (_trackTimer) { clearInterval(_trackTimer); _trackTimer = null; }
+
+  const btn = root.querySelector('#btn-track');
+  if (btn) { btn.classList.remove('stop'); btn.innerHTML = `${icons.play}<span>${t('trackStart')}</span>`; }
+  const hud = root.querySelector('#track-hud');
+  if (hud) hud.style.display = 'none';
+
+  if (_trackLayer) { _map.removeLayer(_trackLayer); _trackLayer = null; }
+  if (_trackDot) { _map.removeLayer(_trackDot); _trackDot = null; }
+
+  if (!showSummary || _trackPoints.length < 2) return;
+
+  const duration = Math.floor((Date.now() - _trackStartTime) / 1000);
+  const distance = totalDistance(_trackPoints);
+  const avgPace = distance > 0 ? Math.round(duration / (distance / 1000)) : 0;
+  openSaveHikeModal(trip, { duration, distance: Math.round(distance), avgPace });
+}
+
+function openSaveHikeModal(trip, stats) {
+  const { duration, distance, avgPace } = stats;
+  const distKm = (distance / 1000).toFixed(2);
+  const paceFmt = avgPace > 0 ? `${Math.floor(avgPace/60)}:${String(avgPace%60).padStart(2,'0')}` : '--:--';
+  const dayOptions = (trip.days||[]).map(d =>
+    `<option value="${esc(d.id)}">${esc(d.label)}${d.date ? ' – ' + formatDate(d.date) : ''}</option>`
+  ).join('');
+
+  openModal(`
+    <div class="modal-title">${t('hikeSummary')}</div>
+    <div class="hike-summary-stats">
+      <div class="hike-stat-block"><div class="hike-stat-val">${distKm}</div><div class="hike-stat-label">km</div></div>
+      <div class="hike-stat-block"><div class="hike-stat-val">${formatDuration(duration)}</div><div class="hike-stat-label">${t('time')}</div></div>
+      <div class="hike-stat-block"><div class="hike-stat-val">${paceFmt}</div><div class="hike-stat-label">min/km</div></div>
+    </div>
+    ${dayOptions ? `
+    <div class="field" style="margin-top:12px;">
+      <label>${t('saveToDay')}</label>
+      <select id="m-hike-day" style="width:100%;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:.93rem;background:var(--bg);color:var(--text)">
+        <option value="">${t('hikeDontSave')}</option>
+        ${dayOptions}
+      </select>
+    </div>` : ''}
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">${t('discard')}</button>
+      <button class="btn-primary" id="m-hike-save">${t('save')}</button>
+    </div>
+  `);
+
+  document.getElementById('m-hike-save').onclick = () => {
+    const dayId = document.getElementById('m-hike-day')?.value;
+    if (dayId) {
+      const day = getDay(trip, dayId);
+      if (day) {
+        if (!day.entries) day.entries = [];
+        day.entries.push({ id: uid(), type: 'hike', date: new Date().toISOString(), duration, distance, avgPace });
+        saveState();
+        showToast(t('hikeSaved'));
+      }
+    }
+    closeModal();
+  };
 }
 
 // ── Offline tile download ──────────────────────────────────
