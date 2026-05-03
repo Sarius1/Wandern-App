@@ -170,6 +170,11 @@ function handleRoute() {
 
 window.addEventListener('hashchange', handleRoute);
 
+// Re-acquire wake lock when returning to foreground during an active tracking session
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && _trackActive && !_trackPaused) _requestWakeLock();
+});
+
 // ── SVG Icons ──────────────────────────────────────────────
 const icons = {
   mountain: `<svg viewBox="0 0 24 24"><polyline points="3 20 9 8 14 14 17 10 21 20"/></svg>`,
@@ -945,6 +950,7 @@ let _trackDot = null;
 let _trackWatchId = null;
 let _trackTimer = null;
 let _trackStartTime = null;
+let _wakeLock = null;
 
 function renderMapTab(root, trip) {
   root.style.overflowY = 'hidden';
@@ -1001,8 +1007,7 @@ function initMap(trip) {
   }
 
   if (_trackActive && _trackPoints.length > 0) {
-    const latlngs = _trackPoints.map(p => [p.lat, p.lon]);
-    _trackLayer = L.polyline(latlngs, { color: '#e05c1f', weight: 5, opacity: .9 }).addTo(_map);
+    _trackLayer = L.polyline(buildTrackSegments(_trackPoints), { color: '#e05c1f', weight: 5, opacity: .9 }).addTo(_map);
     const last = _trackPoints[_trackPoints.length - 1];
     _trackDot = L.marker([last.lat, last.lon], { icon: L.divIcon({
       className: '',
@@ -1157,6 +1162,29 @@ function syncTrackUI(root, trip) {
   }
 }
 
+async function _requestWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    _wakeLock = await navigator.wakeLock.request('screen');
+    _wakeLock.addEventListener('release', () => { _wakeLock = null; });
+  } catch { /* denied or not supported */ }
+}
+
+function _releaseWakeLock() {
+  if (_wakeLock) { _wakeLock.release().catch(() => {}); _wakeLock = null; }
+}
+
+function buildTrackSegments(points) {
+  const segs = [];
+  let seg = [];
+  for (const p of points) {
+    if (p.segBreak && seg.length > 0) { segs.push(seg); seg = []; }
+    seg.push([p.lat, p.lon]);
+  }
+  if (seg.length > 0) segs.push(seg);
+  return segs.length ? segs : [[]];
+}
+
 function startTracking(trip) {
   if (_trackActive) return;
   if (!navigator.geolocation) { showToast(t('locationUnavailable')); return; }
@@ -1165,9 +1193,11 @@ function startTracking(trip) {
   _trackPoints = [];
   _trackElapsed = 0;
   _trackStartTime = Date.now();
+  _requestWakeLock();
   _beginGpsWatch(trip);
   _trackTimer = setInterval(refreshTrackHUD, 1000);
   refreshTrackHUD();
+  showToast(settings.lang === 'de' ? 'App im Vordergrund lassen' : 'Keep app in foreground');
 }
 
 function pauseTracking() {
@@ -1182,6 +1212,7 @@ function resumeTracking(trip) {
   if (!_trackActive || !_trackPaused) return;
   _trackPaused = false;
   _trackStartTime = Date.now();
+  _requestWakeLock();
   _beginGpsWatch(trip);
   refreshTrackHUD();
 }
@@ -1190,13 +1221,15 @@ function _beginGpsWatch(trip) {
   _trackWatchId = navigator.geolocation.watchPosition(
     pos => {
       const pt = { lat: pos.coords.latitude, lon: pos.coords.longitude, ts: pos.timestamp };
+      const prev = _trackPoints[_trackPoints.length - 1];
+      if (prev && (pt.ts - prev.ts) > 30000) pt.segBreak = true;
       _trackPoints.push(pt);
       if (_map) {
-        const latlngs = _trackPoints.map(p => [p.lat, p.lon]);
+        const segs = buildTrackSegments(_trackPoints);
         if (_trackLayer) {
-          _trackLayer.setLatLngs(latlngs);
+          _trackLayer.setLatLngs(segs);
         } else {
-          _trackLayer = L.polyline(latlngs, { color: '#e05c1f', weight: 5, opacity: .9 }).addTo(_map);
+          _trackLayer = L.polyline(segs, { color: '#e05c1f', weight: 5, opacity: .9 }).addTo(_map);
         }
         const latlng = [pt.lat, pt.lon];
         if (_trackDot) {
@@ -1319,13 +1352,16 @@ async function routeToCanvas(points, gpxPoints = []) {
   // Tracked route on top
   ctx.shadowColor = 'rgba(255,255,255,.85)';
   ctx.shadowBlur = 3;
-  ctx.beginPath();
   ctx.strokeStyle = '#e05c1f';
   ctx.lineWidth = 4;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  points.forEach((p, i) => { const { x, y } = project(p.lat, p.lon); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
-  ctx.stroke();
+  buildTrackSegments(points).forEach(seg => {
+    if (seg.length < 2) return;
+    ctx.beginPath();
+    seg.forEach(([lat, lon], i) => { const { x, y } = project(lat, lon); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); });
+    ctx.stroke();
+  });
   ctx.shadowBlur = 0;
 
   const drawDot = (lat, lon, color) => {
@@ -1382,6 +1418,7 @@ function finishTracking(trip, showSummary = true) {
 
   _trackActive = false;
   _trackPaused = false;
+  _releaseWakeLock();
   if (_trackWatchId !== null) { navigator.geolocation.clearWatch(_trackWatchId); _trackWatchId = null; }
   if (_trackTimer) { clearInterval(_trackTimer); _trackTimer = null; }
 
